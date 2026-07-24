@@ -18,22 +18,31 @@
   
   <div class="container">
     
-    <div id="unauthorizedView" class="card text-center hidden" style="margin-top: 40px; padding: 40px 20px;">
-      <div style="font-size: 64px; margin-bottom: 20px;">🔒</div>
-      <h2 style="color: #dc2626; margin-bottom: 12px;">Nincs jogosultságod!</h2>
-      <p id="unauthorizedEmailText" style="font-size: 24px; color: #64748b; margin-bottom: 24px;">
-        A jelenlegi fiókod nincs regisztrálva a Piarista Rendszerben.
-      </p>
-      
-      <a id="switchAccountBtn" href="#" target="_top" style="display: inline-block; background-color: #2563eb; color: white; padding: 18px 28px; border-radius: 12px; font-size: 26px; font-weight: bold; text-decoration: none; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);">
-        🔄 Váltás másik Google fiókra
-      </a>
-    </div>
-
+   <!-- FIÓKVÁLTÓ / AZONOSÍTÓ KÁRTYA -->
+<div id="unauthorizedView" class="hidden">
+  <div class="card" style="text-align: center; margin-top: 50px; padding: 30px;">
+    
+    <h2 id="unauthorizedTitle" style="color: #1976d2; margin-bottom: 15px;">🔑 Google-fiók azonosítása</h2>
+    
+    <p id="unauthorizedEmailText" style="font-size: 16px; color: #444; margin-bottom: 10px;">
+      Kérjük, válaszd ki a céges Piarista Google-fiókodat a belépéshez!
+    </p>
+    
+    <p id="unauthorizedSubText" style="font-size: 14px; color: #666; margin-bottom: 20px;">
+      A PayKal használatához az engedélyezett e-mail címeddel kell bejelentkezned.
+    </p>
+    
+    <a id="switchAccountBtn" href="#" target="_top" class="btn" style="background: #1976d2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 15px;">
+      🔑 Fiók kiválasztása / Váltás
+    </a>
+    
+  </div>
+</div>
+    
     <!-- ==========================================
        1. KÉPERNYŐ: DASHBOARD (FŐOLDAL)
        ========================================== -->
-    <div id="dashboardView">
+    <div id="dashboardView" class="hidden">
       
       <!-- Fejléc -->
       <header class="paykal-header">
@@ -239,7 +248,7 @@
 
         <label for="transferComment">Megjegyzés</label>
         <textarea id="transferComment" placeholder="Megjegyzés (pl. ki intézte)"></textarea>
-        
+
        <!-- Pénzmozgás státuszjelző (A Mentés gomb FELETT, háttérrel) -->
         <div id="transferStatusProgress" class="hidden" style="margin-top: 15px; margin-bottom: 10px; padding: 12px; background-color: #f0f4f8; border-radius: 8px; font-weight: bold; font-size: 16px; text-align: center;"></div>
 

@@ -14,46 +14,74 @@ function include(filename) {
 }
 
 /**
- * Belépő felhasználó azonosítása és jogosultság ellenőrzése
+ * Felhasználó azonosítása és jogosultság ellenőrzése
+ */
+/**
+ * Felhasználó azonosítása és jogosultság ellenőrzése
  */
 function getUserAuth() {
-  const activeEmail = Session.getActiveUser().getEmail();
-  
-  if (!activeEmail) {
-    return { authorized: false, reason: "NO_EMAIL" };
-  }
+  try {
+    const activeEmail = Session.getActiveUser().getEmail();
+    const scriptUrl = ScriptApp.getService().getUrl();
+    const switchUrl = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl);
 
-  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
-  const userSheet = ss.getSheetByName(APP.SHEETS.USERS);
-  
-  if (!userSheet) {
-    throw new Error("A 'Felhasználók' munkalap nem található!");
-  }
+    // 1. HA ELSŐ BELÉPÉS (A Google még nem adta át az e-mailt)
+    if (!activeEmail || activeEmail.trim() === "") {
+      return {
+        authorized: false,
+        needsAuth: true, // JELZÉS: Automatikus átirányítás szükséges!
+        switchAccountUrl: switchUrl
+      };
+    }
 
-  const data = userSheet.getDataRange().getValues();
-  // Feltételezett fejlécek: A: Email, B: Név, C: Csoport_ID, D: Szerepkör
-  for (let i = 1; i < data.length; i++) {
-    const email = String(data[i][0]).trim().toLowerCase();
-    if (email === activeEmail.toLowerCase()) {
+    // 2. 'Felhasználók' lap ellenőrzése
+    const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+    const usersSheet = ss.getSheetByName(APP.SHEETS.USERS);
+    
+    let isAuthorized = false;
+    let userGroup = null;
+
+    if (usersSheet && usersSheet.getLastRow() >= 2) {
+      const usersData = usersSheet.getRange(2, 1, usersSheet.getLastRow() - 1, 4).getValues();
+      
+      for (let i = 0; i < usersData.length; i++) {
+        const sheetEmail = String(usersData[i][0]).trim().toLowerCase();
+        const currentEmail = activeEmail.trim().toLowerCase();
+        
+        if (sheetEmail === currentEmail) {
+          isAuthorized = true;
+          userGroup = usersData[i][2];
+          break;
+        }
+      }
+    }
+
+    // 3. HA BENNE VAN A TÁBLÁZATBAN ➔ BEENGETJÜK!
+    if (isAuthorized) {
       return {
         authorized: true,
         email: activeEmail,
-        name: data[i][1],
-        csoportId: data[i][2],
-        role: data[i][3]
+        csoportId: userGroup
       };
     }
+
+    // 4. HA ISMERT AZ E-MAIL, DE NINCS A TÁBLÁZATBAN ➔ LETILTÓ KÁRTYA!
+    return {
+      authorized: false,
+      needsAuth: false,
+      email: activeEmail,
+      switchAccountUrl: switchUrl
+    };
+
+  } catch (error) {
+    const scriptUrl = ScriptApp.getService().getUrl();
+    return {
+      authorized: false,
+      needsAuth: false,
+      email: "Azonosítási hiba történt",
+      switchAccountUrl: "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl)
+    };
   }
-
-  // Ha nem található a Felhasználók lapon: Fiókváltó link generálása
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const switchAccountUrl = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl);
-
-  return {
-    authorized: false,
-    email: activeEmail,
-    switchAccountUrl: switchAccountUrl
-  };
 }
 
 /* --- API WRAPPER FÜGGVÉNYEK --- */

@@ -12,30 +12,76 @@ let currentIncomeData = null;
    ========================================== */
 document.addEventListener("DOMContentLoaded", function() {
 
-  /* --- 2.1 Jogosultság ellenőrzése és Kezdő adatok betöltése --- */
-  google.script.run
-    .withSuccessHandler(function(auth) {
-      if (!auth.authorized) {
-        // Ha NINCS JOGOSULTSÁG: Dashboard elrejtése, Fiókváltó megjelenítése
-        document.getElementById("dashboardView")?.classList.add("hidden");
-        document.getElementById("unauthorizedView")?.classList.remove("hidden");
-        
-        const emailText = document.getElementById("unauthorizedEmailText");
-        if (emailText) emailText.innerText = "Bejelentkezve mint: " + (auth.email || "Ismeretlen fiók");
-        
-        const switchBtn = document.getElementById("switchAccountBtn");
-        if (switchBtn && auth.switchAccountUrl) switchBtn.href = auth.switchAccountUrl;
-      } else {
-        // HA VAN JOGOSULTSÁG: Adatok betöltése
-        document.getElementById("unauthorizedView")?.classList.add("hidden");
-        loadPayKalDashboard(currentPeriod);
-        loadSettings();
+/* --- Jogosultság ellenőrzése --- */
+google.script.run
+  .withSuccessHandler(function(auth) {
+    
+    // 1. HA JOGOSULT FELHASZNÁLÓ -> DASHBOARD BETÖLTÉSE
+    if (auth.authorized) {
+      document.getElementById("unauthorizedView")?.classList.add("hidden");
+      document.getElementById("dashboardView")?.classList.remove("hidden");
+      loadPayKalDashboard(currentPeriod);
+      loadSettings();
+      return;
+    }
+
+    // 2. HA JOGOSULATLAN VAGY AZONOSÍTATLAN -> FIÓKVÁLTÓ KÁRTYA MEGJELENÍTÉSE
+    document.getElementById("dashboardView")?.classList.add("hidden");
+    document.getElementById("unauthorizedView")?.classList.remove("hidden");
+
+    const titleEl = document.getElementById("unauthorizedTitle");
+    const emailTextEl = document.getElementById("unauthorizedEmailText");
+    const subTextEl = document.getElementById("unauthorizedSubText");
+    const switchBtn = document.getElementById("switchAccountBtn");
+
+    if (auth.isUnknown || !auth.email) {
+      // ----------------------------------------------------
+      // A) HA A GOOGLE MÉG EGYÁLTALÁN NEM ADTA ÁT AZ E-MAILT
+      // ----------------------------------------------------
+      if (titleEl) {
+        titleEl.innerText = "🔑 Azonosítás szükséges";
+        titleEl.style.color = "#1976d2"; // Kék
       }
-    })
-    .withFailureHandler(function(err) {
-      console.error("Autentikációs hiba történt:", err);
-    })
-    .getUserAuth();
+      if (emailTextEl) {
+        emailTextEl.innerText = "Az alkalmazás használatához azonosítanod kell a Google-fiókodat.";
+      }
+      if (subTextEl) {
+        subTextEl.innerText = "Kattints az alábbi gombra a belépéshez!";
+      }
+      if (switchBtn) {
+        switchBtn.innerText = "🔑 Bejelentkezés / Azonosítás";
+      }
+
+    } else {
+      // ----------------------------------------------------
+      // B) MÁR ISMERJÜK AZ E-MAILT, DE NINCS A TÁBLÁZATBAN!
+      // ----------------------------------------------------
+      if (titleEl) {
+        titleEl.innerText = "🚫 Hozzáférés megtagadva";
+        titleEl.style.color = "#d32f2f"; // Piros
+      }
+      if (emailTextEl) {
+        emailTextEl.innerHTML = "Sajnos a(z) <strong style='color:#d32f2f;'>" + auth.email + "</strong> e-mail cím nem jogosult a felület használatához.";
+      }
+      if (subTextEl) {
+        subTextEl.innerText = "Ha van engedélyezett (pl. @km.piarista.hu) fiókod, kérjük válts át rá, vagy kérj hozzáférést az adminisztrátortól!";
+      }
+      if (switchBtn) {
+        switchBtn.innerText = "🔄 Fiók váltása másik címre";
+      }
+    }
+
+    // Gomb hivatkozásának beállítása (biztonságos target="_top")
+    if (switchBtn && auth.switchAccountUrl) {
+      switchBtn.href = auth.switchAccountUrl;
+      switchBtn.target = "_top";
+    }
+  })
+  .withFailureHandler(function(err) {
+    console.error("Autentikációs hiba:", err);
+    document.getElementById("unauthorizedView")?.classList.remove("hidden");
+  })
+  .getUserAuth();
 
   /* --- 2.2 Automatikus mai dátumok beállítása --- */
   try {
