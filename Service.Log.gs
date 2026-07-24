@@ -1,23 +1,23 @@
-/**
- * ExpenseTracker napló szolgáltatás
- */
-
 function writeLog(level, module, message) {
-  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
-  const sheet = ss.getSheetByName(APP.SHEETS.LOG);
+  try {
+    const auth = getUserAuth();
+    const csoportId = auth.csoportId || "ISMERETLEN";
+    const email = auth.email || Session.getActiveUser().getEmail() || "ISMERETLEN";
 
-  sheet.appendRow([
-    new Date(),
-    level,
-    module,
-    message
-  ]);
-}
+    const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+    const sheet = ss.getSheetByName(APP.SHEETS.LOG);
 
-function testLog() {
-  writeLog(
-    "INFO",
-    "Test",
-    "Log rendszer működik"
-  );
+    if (sheet) {
+      sheet.appendRow([
+        new Date(), // Idő
+        level,      // Szint
+        module,     // Modul
+        csoportId,  // Csoport_ID
+        email,      // Felhasználó Email
+        message     // Üzenet
+      ]);
+    }
+  } catch (e) {
+    Logger.log("Log írási hiba: " + e.toString());
+  }
 }

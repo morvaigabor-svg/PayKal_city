@@ -1,318 +1,358 @@
 <script>
   /* ==========================================
-     1. GLOBÁLIS VÁLTOZÓK ÉS ÁLLAPOTOK
-     ========================================== */
-  let selectedReceipts = [];
-  let paykalChart = null;
-  let currentPeriod = "1H";
-  let currentIncomeData = null;
+   1. GLOBÁLIS VÁLTOZÓK ÉS ÁLLAPOTOK
+   ========================================== */
+let selectedReceipts = [];
+let paykalChart = null;
+let currentPeriod = "1H";
+let currentIncomeData = null;
 
-  /* ==========================================
-     2. ESEMÉNYKEZELŐK INICIALIZÁLÁSA (DOM READY)
-     ========================================== */
-  document.addEventListener("DOMContentLoaded", function() {
+/* ==========================================
+   2. ESEMÉNYKEZELŐK INICIALIZÁLÁSA (DOM READY)
+   ========================================== */
+document.addEventListener("DOMContentLoaded", function() {
 
-    /* --- 2.1 Dashboard és Beállítások betöltése --- */
-    loadPayKalDashboard(currentPeriod);
-    loadSettings();
+  /* --- 2.1 Jogosultság ellenőrzése és Kezdő adatok betöltése --- */
+  google.script.run
+    .withSuccessHandler(function(auth) {
+      if (!auth.authorized) {
+        // Ha NINCS JOGOSULTSÁG: Dashboard elrejtése, Fiókváltó megjelenítése
+        document.getElementById("dashboardView")?.classList.add("hidden");
+        document.getElementById("unauthorizedView")?.classList.remove("hidden");
+        
+        const emailText = document.getElementById("unauthorizedEmailText");
+        if (emailText) emailText.innerText = "Bejelentkezve mint: " + (auth.email || "Ismeretlen fiók");
+        
+        const switchBtn = document.getElementById("switchAccountBtn");
+        if (switchBtn && auth.switchAccountUrl) switchBtn.href = auth.switchAccountUrl;
+      } else {
+        // HA VAN JOGOSULTSÁG: Adatok betöltése
+        document.getElementById("unauthorizedView")?.classList.add("hidden");
+        loadPayKalDashboard(currentPeriod);
+        loadSettings();
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error("Autentikációs hiba történt:", err);
+    })
+    .getUserAuth();
 
-    /* --- 2.2 Automatikus mai dátumok beállítása --- */
-    try {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, "0");
-      const day = String(today.getDate()).padStart(2, "0");
-      const formattedDate = `${year}-${month}-${day}`;
+  /* --- 2.2 Automatikus mai dátumok beállítása --- */
+  try {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    const formattedDate = `${year}-${month}-${day}`;
 
-      if (document.getElementById("date")) document.getElementById("date").value = formattedDate;
-      if (document.getElementById("incomeDate")) document.getElementById("incomeDate").value = formattedDate;
-      if (document.getElementById("transferDate")) document.getElementById("transferDate").value = formattedDate;
-    } catch (e) {
-      console.error(e);
+    if (document.getElementById("date")) document.getElementById("date").value = formattedDate;
+    if (document.getElementById("incomeDate")) document.getElementById("incomeDate").value = formattedDate;
+    if (document.getElementById("transferDate")) document.getElementById("transferDate").value = formattedDate;
+  } catch (e) {
+    console.error(e);
+  }
+
+  /* --- 2.3 Vissza gombok a Dashboardra --- */
+  document.getElementById("backToDashBtn")?.addEventListener("click", () => { 
+    showScreen("dashboardView"); 
+    loadPayKalDashboard(currentPeriod); 
+  });
+  document.getElementById("backToDashFromIncomeBtn")?.addEventListener("click", () => { 
+    showScreen("dashboardView"); 
+    loadPayKalDashboard(currentPeriod); 
+  });
+  document.getElementById("backToDashFromTransferBtn")?.addEventListener("click", () => { 
+    showScreen("dashboardView"); 
+    loadPayKalDashboard(currentPeriod); 
+  });
+
+  /* --- 2.4 Befizető Lenyíló Panel Kezelése --- */
+  document.getElementById("payerSelectTrigger")?.addEventListener("click", function(e) {
+    e.stopPropagation();
+    document.getElementById("payersDropdownPanel")?.classList.toggle("hidden");
+  });
+
+  document.getElementById("payersDropdownPanel")?.addEventListener("click", function(e) {
+    e.stopPropagation();
+  });
+
+  document.addEventListener("click", function() {
+    document.getElementById("payersDropdownPanel")?.classList.add("hidden");
+  });
+
+  document.getElementById("cb_other_payer")?.addEventListener("change", function() {
+    const container = document.getElementById("customPayerContainer");
+    if (this.checked) {
+      container.classList.remove("hidden");
+      document.getElementById("customPayerInput")?.focus();
+    } else {
+      container.classList.add("hidden");
+    }
+    updatePayerBadge();
+  });
+
+  /* --- 2.5 Fájl/Blokk Feltöltés Kezelése --- */
+  function handleFileSelect(e) {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    let loadedCount = 0;
+
+    files.forEach((file, index) => {
+      const fileName = file.name || ("blokk_" + (selectedReceipts.length + index + 1) + ".jpg");
+      const reader = new FileReader();
+
+      reader.onload = function(evt) {
+        selectedReceipts.push({
+          data: evt.target.result,
+          name: fileName
+        });
+
+        loadedCount++;
+        if (loadedCount === files.length) {
+          renderReceiptPreviews();
+          document.getElementById("receiptDialog")?.classList.remove("hidden");
+        }
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }
+
+  document.getElementById("receipt")?.addEventListener("change", handleFileSelect);
+  document.getElementById("receiptFile")?.addEventListener("change", handleFileSelect);
+
+  document.getElementById("moreReceiptButton")?.addEventListener("click", function() {
+    document.getElementById("receiptDialog")?.classList.add("hidden");
+    const receiptInput = document.getElementById("receipt");
+    if (receiptInput) receiptInput.value = "";
+    receiptInput?.click();
+  });
+
+  document.getElementById("finishReceiptButton")?.addEventListener("click", function() {
+    document.getElementById("receiptDialog")?.classList.add("hidden");
+  });
+
+  /* --- 2.6 Kiadás Mentése --- */
+  document.getElementById("saveButton")?.addEventListener("click", function() {
+    const amount = document.getElementById("amount").value;
+    const date = document.getElementById("date").value;
+    const costCenter = document.getElementById("costCenter").value;
+    const paymentMethod = document.getElementById("paymentMethod").value;
+    const comment = document.getElementById("comment").value;
+
+    if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
+    if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
+    if (!costCenter) { alert("⚠️ Kérlek válassz költséghelyet!"); return; }
+    if (!paymentMethod) { alert("⚠️ Kérlek válassz fizetési módot!"); return; }
+
+    const expense = { date, amount: Number(amount), costCenter, paymentMethod, comment };
+    window.currentExpense = expense;
+
+    if (selectedReceipts.length === 0) {
+      document.getElementById("noReceiptDialog")?.classList.remove("hidden");
+    } else {
+      showSummary(expense);
+    }
+  });
+
+  document.getElementById("noReceiptBackButton")?.addEventListener("click", function() {
+    document.getElementById("noReceiptDialog")?.classList.add("hidden");
+  });
+
+  document.getElementById("noReceiptContinueButton")?.addEventListener("click", function() {
+    document.getElementById("noReceiptDialog")?.classList.add("hidden");
+    if (window.currentExpense) {
+      showSummary(window.currentExpense);
+    }
+  });
+
+  document.getElementById("cancelButton")?.addEventListener("click", function() {
+    document.getElementById("confirmDialog")?.classList.add("hidden");
+  });
+
+  document.getElementById("confirmButton")?.addEventListener("click", function() {
+    if (!window.currentExpense) return;
+
+    const confirmBtn = document.getElementById("confirmButton");
+    const cancelBtn = document.getElementById("cancelButton");
+    const statusBox = document.getElementById("statusProgress");
+
+    confirmBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    if (statusBox) {
+      statusBox.classList.remove("hidden");
+      statusBox.style.color = "#1976d2";
+      statusBox.textContent = "⏳ Mentés folyamatban...";
     }
 
-    /* --- 2.3 Vissza gombok a Dashboardra --- */
-    document.getElementById("backToDashBtn")?.addEventListener("click", () => { 
-      showScreen("dashboardView"); 
-      loadPayKalDashboard(currentPeriod); 
-    });
-    document.getElementById("backToDashFromIncomeBtn")?.addEventListener("click", () => { 
-      showScreen("dashboardView"); 
-      loadPayKalDashboard(currentPeriod); 
-    });
-    document.getElementById("backToDashFromTransferBtn")?.addEventListener("click", () => { 
-      showScreen("dashboardView"); 
-      loadPayKalDashboard(currentPeriod); 
-    });
-
-    /* --- 2.4 Befizető Lenyíló Panel Kezelése --- */
-    document.getElementById("payerSelectTrigger")?.addEventListener("click", function(e) {
-      e.stopPropagation();
-      document.getElementById("payersDropdownPanel")?.classList.toggle("hidden");
-    });
-
-    document.getElementById("payersDropdownPanel")?.addEventListener("click", function(e) {
-      e.stopPropagation();
-    });
-
-    document.addEventListener("click", function() {
-      document.getElementById("payersDropdownPanel")?.classList.add("hidden");
-    });
-
-    document.getElementById("cb_other_payer")?.addEventListener("change", function() {
-      const container = document.getElementById("customPayerContainer");
-      if (this.checked) {
-        container.classList.remove("hidden");
-        document.getElementById("customPayerInput")?.focus();
-      } else {
-        container.classList.add("hidden");
-      }
-      updatePayerBadge();
-    });
-
-    /* --- 2.5 Fájl/Blokk Feltöltés Kezelése --- */
-    function handleFileSelect(e) {
-      const files = Array.from(e.target.files);
-      if (!files.length) return;
-
-      let loadedCount = 0;
-
-      files.forEach((file, index) => {
-        const fileName = file.name || ("blokk_" + (selectedReceipts.length + index + 1) + ".jpg");
-        const reader = new FileReader();
-
-        reader.onload = function(evt) {
-          selectedReceipts.push({
-            data: evt.target.result,
-            name: fileName
-          });
-
-          loadedCount++;
-          if (loadedCount === files.length) {
-            renderReceiptPreviews();
-            document.getElementById("receiptDialog")?.classList.remove("hidden");
-          }
-        };
-
-        reader.readAsDataURL(file);
-      });
-    }
-
-    document.getElementById("receipt")?.addEventListener("change", handleFileSelect);
-    document.getElementById("receiptFile")?.addEventListener("change", handleFileSelect);
-
-    document.getElementById("moreReceiptButton")?.addEventListener("click", function() {
-      document.getElementById("receiptDialog")?.classList.add("hidden");
-      const receiptInput = document.getElementById("receipt");
-      if (receiptInput) receiptInput.value = "";
-      receiptInput?.click();
-    });
-
-    document.getElementById("finishReceiptButton")?.addEventListener("click", function() {
-      document.getElementById("receiptDialog")?.classList.add("hidden");
-    });
-
-    /* --- 2.6 Kiadás Mentése --- */
-    document.getElementById("saveButton")?.addEventListener("click", function() {
-      const amount = document.getElementById("amount").value;
-      const date = document.getElementById("date").value;
-      const costCenter = document.getElementById("costCenter").value;
-      const paymentMethod = document.getElementById("paymentMethod").value;
-      const comment = document.getElementById("comment").value;
-
-      if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
-      if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
-      if (!costCenter) { alert("⚠️ Kérlek válassz költséghelyet!"); return; }
-      if (!paymentMethod) { alert("⚠️ Kérlek válassz fizetési módot!"); return; }
-
-      const expense = { date, amount: Number(amount), costCenter, paymentMethod, comment };
-      window.currentExpense = expense;
-
-      if (selectedReceipts.length === 0) {
-        document.getElementById("noReceiptDialog")?.classList.remove("hidden");
-      } else {
-        showSummary(expense);
-      }
-    });
-
-    document.getElementById("noReceiptBackButton")?.addEventListener("click", function() {
-      document.getElementById("noReceiptDialog")?.classList.add("hidden");
-    });
-
-    document.getElementById("noReceiptContinueButton")?.addEventListener("click", function() {
-      document.getElementById("noReceiptDialog")?.classList.add("hidden");
-      if (window.currentExpense) {
-        showSummary(window.currentExpense);
-      }
-    });
-
-    document.getElementById("cancelButton")?.addEventListener("click", function() {
-      document.getElementById("confirmDialog")?.classList.add("hidden");
-    });
-
-    document.getElementById("confirmButton")?.addEventListener("click", function() {
-      if (!window.currentExpense) return;
-
-      const confirmBtn = document.getElementById("confirmButton");
-      const cancelBtn = document.getElementById("cancelButton");
-      const statusBox = document.getElementById("statusProgress");
-
-      confirmBtn.disabled = true;
-      if (cancelBtn) cancelBtn.disabled = true;
-
-      if (statusBox) {
-        statusBox.classList.remove("hidden");
-        statusBox.style.color = "#1976d2";
-        statusBox.textContent = "⏳ Mentés folyamatban...";
-      }
-
-      if (selectedReceipts.length === 0) {
-        google.script.run
-          .withSuccessHandler(function() {
-            if (statusBox) {
-              statusBox.style.color = "#2e7d32";
-              statusBox.textContent = "✅ Mentés kész!";
-            }
-            setTimeout(finishExpenseSave, 1200);
-          })
-          .withFailureHandler(function(err) {
-            if (statusBox) {
-              statusBox.style.color = "#d32f2f";
-              statusBox.textContent = "⚠️ Hiba a mentés során: " + err;
-            }
-            resetConfirmButtons();
-          })
-          .saveExpense(window.currentExpense, [], null, null);
-        return;
-      }
-
-      google.script.run
-        .withSuccessHandler(function(expenseId) {
-          uploadReceiptImages(expenseId, 0, []);
-        })
-        .withFailureHandler(function(err) {
-          if (statusBox) {
-            statusBox.style.color = "#d32f2f";
-            statusBox.textContent = "⚠️ Hiba az azonosítónál: " + err;
-          }
-          resetConfirmButtons();
-        })
-        .getExpenseId(window.currentExpense.costCenter);
-    });
-
-    /* --- 2.7 Bevétel Mentése --- */
-    document.getElementById("saveIncomeBtn")?.addEventListener("click", function() {
-      const date = document.getElementById("incomeDate").value;
-      const amount = document.getElementById("incomeAmount").value;
-      const purpose = document.getElementById("incomePurpose").value;
-      const paymentMethod = document.getElementById("incomePaymentMethod").value;
-      const comment = document.getElementById("incomeComment").value;
-
-      if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
-      if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
-      if (!purpose) { alert("⚠️ Kérlek válassz befizetés célt!"); return; }
-      if (!paymentMethod) { alert("⚠️ Kérlek válassz befizetési módot!"); return; }
-
-      const checkedPayers = [];
-      document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked").forEach(cb => checkedPayers.push(cb.value));
-
-      const otherCb = document.getElementById("cb_other_payer");
-      if (otherCb && otherCb.checked) {
-        const customName = document.getElementById("customPayerInput").value.trim();
-        if (!customName) { alert("⚠️ Kérlek add meg az 'Egyéb' befizető nevét!"); return; }
-        checkedPayers.push(customName);
-      }
-
-      if (checkedPayers.length === 0) {
-        alert("⚠️ Kérlek válassz ki legalább egy befizetőt!");
-        return;
-      }
-
-      currentIncomeData = { date, amount: Number(amount), purpose, paymentMethod, payers: checkedPayers, comment };
-      document.getElementById("payersDropdownPanel")?.classList.add("hidden");
-
-      showIncomeSummary(currentIncomeData);
-    });
-
-    document.getElementById("cancelIncomeButton")?.addEventListener("click", () => {
-      document.getElementById("incomeConfirmDialog")?.classList.add("hidden");
-    });
-
-    document.getElementById("confirmIncomeButton")?.addEventListener("click", function() {
-      if (!currentIncomeData) return;
-
-      const confirmBtn = document.getElementById("confirmIncomeButton");
-      const cancelBtn = document.getElementById("cancelIncomeButton");
-      const statusBox = document.getElementById("incomeStatusProgress");
-
-      confirmBtn.disabled = true;
-      if (cancelBtn) cancelBtn.disabled = true;
-
-      if (statusBox) {
-        statusBox.classList.remove("hidden");
-        statusBox.style.color = "#1976d2";
-        statusBox.textContent = "⏳ Bevétel rögzítése...";
-      }
-
+    if (selectedReceipts.length === 0) {
       google.script.run
         .withSuccessHandler(function() {
           if (statusBox) {
             statusBox.style.color = "#2e7d32";
             statusBox.textContent = "✅ Mentés kész!";
           }
-          setTimeout(function() {
-            document.getElementById("incomeConfirmDialog")?.classList.add("hidden");
-            confirmBtn.disabled = false;
-            if (cancelBtn) cancelBtn.disabled = false;
-            if (statusBox) statusBox.classList.add("hidden");
-            resetIncomeForm();
-            showScreen("dashboardView");
-            loadPayKalDashboard(currentPeriod);
-          }, 1200);
+          setTimeout(finishExpenseSave, 1200);
         })
         .withFailureHandler(function(err) {
           if (statusBox) {
             statusBox.style.color = "#d32f2f";
-            statusBox.textContent = "⚠️ Hiba: " + err;
+            statusBox.textContent = "⚠️ Hiba a mentés során: " + err;
           }
+          resetConfirmButtons();
+        })
+        .saveExpense(window.currentExpense, [], null, null);
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(expenseId) {
+        uploadReceiptImages(expenseId, 0, []);
+      })
+      .withFailureHandler(function(err) {
+        if (statusBox) {
+          statusBox.style.color = "#d32f2f";
+          statusBox.textContent = "⚠️ Hiba az azonosítónál: " + err;
+        }
+        resetConfirmButtons();
+      })
+      .getExpenseId(window.currentExpense.costCenter);
+  });
+
+  /* --- 2.7 Bevétel Mentése --- */
+  document.getElementById("saveIncomeBtn")?.addEventListener("click", function() {
+    const date = document.getElementById("incomeDate").value;
+    const amount = document.getElementById("incomeAmount").value;
+    const purpose = document.getElementById("incomePurpose").value;
+    const paymentMethod = document.getElementById("incomePaymentMethod").value;
+    const comment = document.getElementById("incomeComment").value;
+
+    if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
+    if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
+    if (!purpose) { alert("⚠️ Kérlek válassz befizetés célt!"); return; }
+    if (!paymentMethod) { alert("⚠️ Kérlek válassz befizetési módot!"); return; }
+
+    const checkedPayers = [];
+    document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked").forEach(cb => checkedPayers.push(cb.value));
+
+    const otherCb = document.getElementById("cb_other_payer");
+    if (otherCb && otherCb.checked) {
+      const customName = document.getElementById("customPayerInput").value.trim();
+      if (!customName) { alert("⚠️ Kérlek add meg az 'Egyéb' befizető nevét!"); return; }
+      checkedPayers.push(customName);
+    }
+
+    if (checkedPayers.length === 0) {
+      alert("⚠️ Kérlek válassz ki legalább egy befizetőt!");
+      return;
+    }
+
+    currentIncomeData = { date, amount: Number(amount), purpose, paymentMethod, payers: checkedPayers, comment };
+    document.getElementById("payersDropdownPanel")?.classList.add("hidden");
+
+    showIncomeSummary(currentIncomeData);
+  });
+
+  document.getElementById("cancelIncomeButton")?.addEventListener("click", () => {
+    document.getElementById("incomeConfirmDialog")?.classList.add("hidden");
+  });
+
+  document.getElementById("confirmIncomeButton")?.addEventListener("click", function() {
+    if (!currentIncomeData) return;
+
+    const confirmBtn = document.getElementById("confirmIncomeButton");
+    const cancelBtn = document.getElementById("cancelIncomeButton");
+    const statusBox = document.getElementById("incomeStatusProgress");
+
+    confirmBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    if (statusBox) {
+      statusBox.classList.remove("hidden");
+      statusBox.style.color = "#1976d2";
+      statusBox.textContent = "⏳ Bevétel rögzítése...";
+    }
+
+    google.script.run
+      .withSuccessHandler(function() {
+        if (statusBox) {
+          statusBox.style.color = "#2e7d32";
+          statusBox.textContent = "✅ Mentés kész!";
+        }
+        setTimeout(function() {
+          document.getElementById("incomeConfirmDialog")?.classList.add("hidden");
           confirmBtn.disabled = false;
           if (cancelBtn) cancelBtn.disabled = false;
-        })
-        .saveIncome(currentIncomeData);
-    });
-
-    /* --- 2.8 Pénzmozgás Mentése --- */
-    document.getElementById("saveTransferBtn")?.addEventListener("click", function() {
-      const date = document.getElementById("transferDate").value;
-      const type = document.getElementById("transferType").value;
-      const amount = document.getElementById("transferAmount").value;
-      const comment = document.getElementById("transferComment").value;
-
-      if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
-      if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
-
-      const transferData = { date, type, amount: Number(amount), comment };
-      const saveBtn = document.getElementById("saveTransferBtn");
-
-      saveBtn.disabled = true;
-
-      google.script.run
-        .withSuccessHandler(function() {
-          setTimeout(function() {
-            saveBtn.disabled = false;
-            resetTransferForm();
-            showScreen("dashboardView");
-            loadPayKalDashboard(currentPeriod);
-          }, 1000);
-        })
-        .withFailureHandler(function(err) {
-          alert("⚠️ Hiba: " + err);
-          saveBtn.disabled = false;
-        })
-        .saveTransfer(transferData);
-    });
-
+          if (statusBox) statusBox.classList.add("hidden");
+          resetIncomeForm();
+          showScreen("dashboardView");
+          loadPayKalDashboard(currentPeriod);
+        }, 1200);
+      })
+      .withFailureHandler(function(err) {
+        if (statusBox) {
+          statusBox.style.color = "#d32f2f";
+          statusBox.textContent = "⚠️ Hiba: " + err;
+        }
+        confirmBtn.disabled = false;
+        if (cancelBtn) cancelBtn.disabled = false;
+      })
+      .saveIncome(currentIncomeData);
   });
+
+  /* --- 2.8 Pénzmozgás Mentése --- */
+  document.getElementById("saveTransferBtn")?.addEventListener("click", function() {
+    const date = document.getElementById("transferDate").value;
+    const type = document.getElementById("transferType").value;
+    const amount = document.getElementById("transferAmount").value;
+    const comment = document.getElementById("transferComment").value;
+
+    if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
+    if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
+
+    const transferData = { date, type, amount: Number(amount), comment };
+    const saveBtn = document.getElementById("saveTransferBtn");
+    const statusBox = document.getElementById("transferStatusProgress");
+
+    saveBtn.disabled = true;
+
+    if (statusBox) {
+      statusBox.classList.remove("hidden");
+      statusBox.style.color = "#1976d2";
+      statusBox.textContent = "⏳ Pénzmozgás rögzítése...";
+    }
+
+    google.script.run
+      .withSuccessHandler(function() {
+        if (statusBox) {
+          statusBox.style.color = "#2e7d32";
+          statusBox.textContent = "✅ Mentés kész!";
+        }
+
+        setTimeout(function() {
+          saveBtn.disabled = false;
+          if (statusBox) {
+            statusBox.classList.add("hidden");
+            statusBox.textContent = "";
+          }
+          resetTransferForm();
+          showScreen("dashboardView");
+          loadPayKalDashboard(currentPeriod);
+        }, 1200);
+      })
+      .withFailureHandler(function(err) {
+        if (statusBox) {
+          statusBox.style.color = "#d32f2f";
+          statusBox.textContent = "⚠️ Hiba a mentés során: " + err;
+        }
+        saveBtn.disabled = false;
+      })
+      .saveTransfer(transferData);
+  });
+
+});
 
   /* ==========================================
      3. KÉPERNYŐ NAVIGÁCIÓ ÉS DASHBOARD
