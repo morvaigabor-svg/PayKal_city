@@ -1,14 +1,4 @@
 /**
- * Létrehozza a saját menüpontot a Google Sheet felső menüsorában
- */
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('Piarista Rendszer')
-    .addItem('➕ Új csoport létrehozása', 'openNewGroupModal')
-    .addToUi();
-}
-
-/**
  * Megnyitja az űrlapot (Megnövelt magassággal: 465px)
  */
 /**
