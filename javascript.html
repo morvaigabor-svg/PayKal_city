@@ -101,8 +101,19 @@ document.addEventListener("DOMContentLoaded", function() {
     e.stopPropagation();
     document.getElementById("payersDropdownPanel")?.classList.toggle("hidden");
   });
+  
   document.getElementById("payersDropdownPanel")?.addEventListener("click", function(e) { e.stopPropagation(); });
-  document.getElementById("customPayerContainer")?.addEventListener("click", function(e) { e.stopPropagation(); });
+  
+  const customContainer = document.getElementById("customPayerContainer");
+  if (customContainer) {
+    customContainer.addEventListener("click", function(e) { e.stopPropagation(); });
+  }
+  
+  const customInput = document.getElementById("customPayerInput");
+  if (customInput) {
+    customInput.addEventListener("click", function(e) { e.stopPropagation(); });
+  }
+
   document.addEventListener("click", function() { document.getElementById("payersDropdownPanel")?.classList.add("hidden"); });
 
   // --- 2.5 Fájl / Blokk feltöltés ---
@@ -287,6 +298,8 @@ document.addEventListener("DOMContentLoaded", function() {
     if (statusBox) {
       statusBox.classList.remove("hidden");
       statusBox.style.color = "#1976d2";
+      statusBox.style.fontSize = "22px";
+      statusBox.style.fontWeight = "bold";
       statusBox.textContent = "⏳ Pénzmozgás rögzítése...";
     }
 
@@ -606,7 +619,7 @@ function showSummary(expense) {
       "<p style='margin:4px 0;'><strong>Elszámolási kategória:</strong> " + (expense.extraCategory || "Nincs") + "</p>" +
       "<p style='margin:4px 0;'><strong>Megjegyzés:</strong> " + (expense.comment || "Nincs") + "</p>" +
       "<p style='margin:4px 0;'><strong>Csatolt blokkok:</strong> " + selectedReceipts.length + " db</p>" +
-      "<div id='expenseModalStatusBox' style='margin-top:12px; font-weight:bold; font-size:15px; text-align:center;'></div>";
+      "<div id='expenseModalStatusBox' style='margin-top:14px; font-weight:bold; font-size:24px; text-align:center;'></div>";
   }
 
   resetConfirmButtons();
@@ -617,6 +630,8 @@ function updateExpenseModalStatus(msg, color) {
   const statusBox = document.getElementById("expenseModalStatusBox") || document.getElementById("statusProgress");
   if (statusBox) {
     statusBox.style.color = color;
+    statusBox.style.fontSize = "22px";
+    statusBox.style.fontWeight = "bold";
     statusBox.textContent = msg;
     statusBox.classList.remove("hidden");
   }
@@ -669,7 +684,7 @@ function showIncomeSummary(income) {
       "<p style='margin:4px 0;'><strong>Befizetés módja:</strong> " + income.paymentMethod + "</p>" +
       "<p style='margin:4px 0;'><strong>Kijelölt befizetők (" + income.payers.length + " fő):</strong><br><i>" + income.payers.join(", ") + "</i></p>" +
       "<p style='font-size: 18px; color: #2e7d32; margin-top: 10px; margin-bottom: 4px;'><strong>Összesen rögzítve: " + formatHUF(totalSum) + "</strong></p>" +
-      "<div id='incomeModalStatusBox' style='margin-top:10px; font-weight:bold; font-size:15px; text-align:center;'></div>";
+      "<div id='incomeModalStatusBox' style='margin-top:14px; font-weight:bold; font-size:24px; text-align:center;'></div>";
   }
 
   const confirmBtn = document.getElementById("confirmIncomeButton");
@@ -684,6 +699,8 @@ function updateIncomeModalStatus(msg, color) {
   const statusBox = document.getElementById("incomeModalStatusBox") || document.getElementById("incomeStatusProgress");
   if (statusBox) {
     statusBox.style.color = color;
+    statusBox.style.fontSize = "22px";
+    statusBox.style.fontWeight = "bold";
     statusBox.textContent = msg;
     statusBox.classList.remove("hidden");
   }
@@ -769,7 +786,7 @@ function loadSettings() {
         }
       }
 
-      // --- EGYSÉGES BEFIZETŐI LISTA GENERÁLÁSA ---
+      // --- EGYSÉGES BEFIZETŐI LISTA GENERÁLÁSA ÉS EGYÉB MEZŐ KEZELÉSE ---
       const payersList = document.getElementById("payersCheckboxList");
       const membersList = data.members || data.payers;
       if (payersList && membersList) {
@@ -790,14 +807,17 @@ function loadSettings() {
             cb.id = "cb_other_payer";
           }
 
-          cb.addEventListener("change", function() {
+          cb.addEventListener("change", function(e) {
             if (this.id === "cb_other_payer") {
               const container = document.getElementById("customPayerContainer");
               if (container) {
                 if (this.checked) {
                   container.classList.remove("hidden");
                   container.style.display = "block";
-                  setTimeout(() => document.getElementById("customPayerInput")?.focus(), 50);
+                  const inputEl = document.getElementById("customPayerInput");
+                  if (inputEl) {
+                    setTimeout(() => inputEl.focus(), 100);
+                  }
                 } else {
                   container.classList.add("hidden");
                   container.style.display = "none";
