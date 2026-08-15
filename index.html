@@ -18,26 +18,21 @@
   
   <div class="container">
     
-   <!-- FIÓKVÁLTÓ / AZONOSÍTÓ KÁRTYA -->
-<div id="unauthorizedView" class="hidden">
-  <div class="card" style="text-align: center; margin-top: 50px; padding: 30px;">
-    
-    <h2 id="unauthorizedTitle" style="color: #1976d2; margin-bottom: 15px;">🔑 Google-fiók azonosítása</h2>
-    
-    <p id="unauthorizedEmailText" style="font-size: 16px; color: #444; margin-bottom: 10px;">
-      Kérjük, válaszd ki a céges Piarista Google-fiókodat a belépéshez!
-    </p>
-    
-    <p id="unauthorizedSubText" style="font-size: 14px; color: #666; margin-bottom: 20px;">
-      A PayKal használatához az engedélyezett e-mail címeddel kell bejelentkezned.
-    </p>
-    
-    <a id="switchAccountBtn" href="#" target="_top" class="btn" style="background: #1976d2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 15px;">
-      🔑 Fiók kiválasztása / Váltás
-    </a>
-    
-  </div>
-</div>
+    <!-- FIÓKVÁLTÓ / AZONOSÍTÓ KÁRTYA -->
+    <div id="unauthorizedView" class="hidden">
+      <div class="card" style="text-align: center; margin-top: 50px; padding: 30px;">
+        <h2 id="unauthorizedTitle" style="color: #1976d2; margin-bottom: 15px;">🔑 Google-fiók azonosítása</h2>
+        <p id="unauthorizedEmailText" style="font-size: 16px; color: #444; margin-bottom: 10px;">
+          Kérjük, válaszd ki a céges Piarista Google-fiókodat a belépéshez!
+        </p>
+        <p id="unauthorizedSubText" style="font-size: 14px; color: #666; margin-bottom: 20px;">
+          A PayKal használatához az engedélyezett e-mail címeddel kell bejelentkezned.
+        </p>
+        <a id="switchAccountBtn" href="#" target="_top" class="btn" style="background: #1976d2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 15px;">
+          🔑 Fiók kiválasztása / Váltás
+        </a>
+      </div>
+    </div>
     
     <!-- ==========================================
        1. KÉPERNYŐ: DASHBOARD (FŐOLDAL)
@@ -76,15 +71,24 @@
           </div>
         </div>
 
-        <!-- Diagram kártya és időszakszűrők -->
+        <!-- Diagram kártya és Nézet szűrő -->
         <div class="card chart-card">
+          
+          <!-- Nézet / Projekt kiválasztó legördülő (felirat nélkül) -->
+          <div class="project-select-wrapper" style="margin-bottom: 12px;">
+            <select id="projectSelect" onchange="onProjectFilterChange(this.value)" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; background: #fff; font-weight: 500;">
+              <option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>
+            </select>
+          </div>
+
+          <!-- Időszak szűrők -->
           <div class="time-filter-group">
-            <button type="button" class="time-btn active" onclick="changeTimeFilter('1H')">1 H</button>
-            <button type="button" class="time-btn" onclick="changeTimeFilter('3H')">3 H</button>
-            <button type="button" class="time-btn" onclick="changeTimeFilter('6H')">6 H</button>
-            <button type="button" class="time-btn" onclick="changeTimeFilter('1E')">1 É</button>
-            <button type="button" class="time-btn" onclick="changeTimeFilter('2E')">2 É</button>
-            <button type="button" class="time-btn" onclick="changeTimeFilter('O')">Ö</button>
+            <button type="button" class="time-btn active" onclick="changeTimeFilter('1H', this)">1 H</button>
+            <button type="button" class="time-btn" onclick="changeTimeFilter('3H', this)">3 H</button>
+            <button type="button" class="time-btn" onclick="changeTimeFilter('6H', this)">6 H</button>
+            <button type="button" class="time-btn" onclick="changeTimeFilter('1E', this)">1 É</button>
+            <button type="button" class="time-btn" onclick="changeTimeFilter('2E', this)">2 É</button>
+            <button type="button" class="time-btn" onclick="changeTimeFilter('O', this)">Ö</button>
           </div>
 
           <div class="chart-container">
@@ -92,7 +96,7 @@
           </div>
         </div>
 
-        <!-- Fő akciógombok -->
+        <!-- Akciógombok egyenértékű 2x2-es rácsban -->
         <div class="action-buttons-grid">
           <button type="button" id="addIncomeBtn" class="action-btn btn-income" onclick="showScreen('incomeScreen')">
             <span class="btn-icon">💰</span>
@@ -103,12 +107,17 @@
             <span class="btn-icon">➖</span>
             <span>Kiadás hozzáadása</span>
           </button>
-        </div>
 
-        <button type="button" id="addTransferBtn" class="action-btn btn-transfer" onclick="showScreen('transferScreen')">
-          <span class="btn-icon">🔄</span>
-          <span>Készpénz mozgás rögzítése</span>
-        </button>
+          <button type="button" class="action-btn btn-cash" onclick="showScreen('transferScreen')">
+            <span class="btn-icon">🔄</span>
+            <span>Készpénz mozgás rögzítése</span>
+          </button>
+
+          <button type="button" class="action-btn btn-projects" onclick="openProjectModal()">
+            <span class="btn-icon">📁</span>
+            <span>Projektek kezelése</span>
+          </button>
+        </div>
 
       </main>
 
@@ -155,11 +164,9 @@
         <label>Blokk feltöltése</label>
         <div class="upload-box">
           <div class="upload-buttons">
-            <!-- Kamera indítása -->
             <label for="receipt">📷 Blokk fotózása</label>
             <input type="file" id="receipt" accept="image/*" capture="environment">
 
-            <!-- Fájl/Galéria megnyitása -->
             <label for="receiptFile">📎 Fájl csatolása</label>
             <input type="file" id="receiptFile" accept="image/*,.pdf" multiple>
           </div>
@@ -249,20 +256,58 @@
         <label for="transferComment">Megjegyzés</label>
         <textarea id="transferComment" placeholder="Megjegyzés (pl. ki intézte)"></textarea>
 
-       <!-- Pénzmozgás státuszjelző (A Mentés gomb FELETT, háttérrel) -->
         <div id="transferStatusProgress" class="hidden" style="margin-top: 15px; margin-bottom: 10px; padding: 12px; background-color: #f0f4f8; border-radius: 8px; font-weight: bold; font-size: 16px; text-align: center;"></div>
 
         <button id="saveTransferBtn" style="background: #0288d1; margin-top: 10px;">Mentés</button>
-       
       </div>
     </div>
 
   </div>
+
+ <!-- Projektek kezelése FELUGRÓ ABLAK -->
+<div id="projectModal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);">
+  <div style="background-color: #ffffff; margin: 2% auto; padding: 32px 36px; border-radius: 18px; width: 92%; max-width: 760px; min-height: 750px; position: relative; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column;">
+    
+    <!-- FEJLÉC -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 2px solid #f1f5f9; padding-bottom: 16px;">
+      <h3 style="margin: 0; color: #0f172a; font-size: 28px; font-weight: 700;">📁 Projektek kezelése</h3>
+      <span onclick="closeProjectModal()" style="color: #94a3b8; font-size: 36px; font-weight: bold; cursor: pointer; line-height: 1;">&times;</span>
+    </div>
+    
+    <!-- FELSŐ RÉSZ: ÚJ PROJEKT LÉTREHOZÁSA -->
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 22px; margin-bottom: 28px;">
+      <!-- Dupla méretű alcím (32px) -->
+      <h4 style="margin: 0 0 16px 0; font-size: 32px; font-weight: 700; color: #334155;">Új projekt létrehozása</h4>
+      
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+        <input type="text" id="newProjectName" placeholder="Projekt neve (pl. Őszi kirándulás 2026)" style="width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; box-sizing: border-box;" />
+        
+        <select id="newProjectType" style="width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; font-size: 15px; box-sizing: border-box;">
+          <option value="">Válassz típust...</option>
+        </select>
+      </div>
+      
+      <button type="button" onclick="handleCreateProject()" style="width: 100%; background-color: #4f46e5; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 40px;">
+        + Új projekt mentése
+      </button>
+    </div>
+
+    <!-- ALSÓ RÉSZ: AKTÍV PROJEKTEK LISTÁJA -->
+    <div style="border-top: 2px solid #e2e8f0; padding-top: 22px; flex-grow: 1; display: flex; flex-direction: column;">
+      <!-- Dupla méretű alcím (34px) -->
+      <h4 style="margin: 0 0 16px 0; font-size: 34px; font-weight: 700; color: #1e293b;">Aktív projektek</h4>
+      
+      <div id="projectListContainer" style="max-height: 480px; overflow-y: auto; padding-right: 6px; flex-grow: 1;">
+        <p style="color: #64748b; font-size: 18px; margin: 0;">Projektek betöltése...</p>
+      </div>
+    </div>
+
+  </div>
+</div>
 
   <!-- JavaScript és Dialogs modulok beemelése -->
   <?!= include('javascript'); ?>
   <?!= include("dialogs"); ?>
 
 </body>
-
 </html>

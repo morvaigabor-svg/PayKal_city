@@ -58,3 +58,4 @@ function getSettingsData() {
     throw error;
   }
 }
+
