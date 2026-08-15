@@ -364,7 +364,7 @@ function onCoordinatorGroupChange(selectEl) {
   const selectedOption = selectEl.options[selectEl.selectedIndex];
   currentTargetCsoportId = selectedOption.value;
   currentViewType = selectedOption.dataset.viewType || "LEADERSHIP_GROUP";
-  currentSelectedProject = "ALL";
+  currentSelectedProject = "ALL"; // Mindig alaphelyzetbe állítjuk a projektet csoportváltáskor
   
   const projSelect = document.getElementById("projectSelect");
   if (projSelect) projSelect.value = "ALL";
@@ -400,8 +400,10 @@ function updateProjectDropdownOptions(projects, selectedProject) {
   if (Array.isArray(projects) && projects.length > 0) {
     projects.forEach(proj => {
       const option = document.createElement("option");
-      option.value = proj.id || proj.name || proj;
-      option.textContent = proj.name || proj;
+      const pVal = typeof proj === "object" ? (proj.id || proj.name) : proj;
+      const pText = typeof proj === "object" ? (proj.name || proj.id) : proj;
+      option.value = pVal;
+      option.textContent = pText;
       projSelect.appendChild(option);
     });
   }
@@ -412,17 +414,46 @@ function updateProjectDropdownOptions(projects, selectedProject) {
 function renderPayKalDashboardUI(data) {
   if (!data) return;
 
+  // 1. Projektek frissítése az éppen megjelenített csoport nézetéhez igazítva
+  if (data.projects || data.availableProjects) {
+    updateProjectDropdownOptions(data.projects || data.availableProjects, data.selectedProject);
+  }
+
+  // 2. Címke frissítése: projekt neve + "- egyenleg" (pl. "Félévtervezés 2026 - egyenleg")
   const balanceLabel = document.querySelector('.balance-label');
   if (balanceLabel) {
     if (data.viewType === "CITY_SUMMARY") {
       balanceLabel.innerText = data.displayTitle;
     } else if (data.selectedProject && data.selectedProject !== "ALL") {
-      balanceLabel.innerText = `${data.selectedProject} - egyenlege`;
+      let projName = data.selectedProjectName;
+      
+      const projList = data.projects || data.availableProjects || [];
+      if (!projName && Array.isArray(projList)) {
+        const found = projList.find(p => typeof p === 'object' ? (p.id === data.selectedProject || p.name === data.selectedProject) : p === data.selectedProject);
+        if (found) {
+          projName = typeof found === 'object' ? (found.name || found.id) : found;
+        }
+      }
+      
+      if (!projName) {
+        const projSelect = document.getElementById("projectSelect");
+        if (projSelect && projSelect.selectedIndex >= 0) {
+          const optText = projSelect.options[projSelect.selectedIndex]?.textContent;
+          if (optText && !optText.startsWith("--")) {
+            projName = optText;
+          }
+        }
+      }
+      
+      if (!projName) projName = data.selectedProject;
+
+      balanceLabel.innerText = `${projName} - egyenleg`;
     } else {
       balanceLabel.innerText = data.displayTitle || "CSOPORT VAGYONA";
     }
   }
 
+  // 3. Egyenleg értékek beállítása
   document.getElementById('totalBalanceDisplay').innerText = formatHUF(data.totalBalance || 0);
   document.getElementById('cashBalanceDisplay').innerText = formatHUF(data.cashBalance || 0);
   document.getElementById('bankBalanceDisplay').innerText = formatHUF(data.bankBalance || 0);
@@ -442,10 +473,6 @@ function renderPayKalDashboardUI(data) {
     if (actionGrid) actionGrid.classList.remove('hidden');
   }
 
-  if (data.projects || data.availableProjects) {
-    updateProjectDropdownOptions(data.projects || data.availableProjects, data.selectedProject);
-  }
-
   if (data.chartType === "BAR") {
     if (projWrapper) projWrapper.classList.add('hidden');
     if (timeGroup) timeGroup.classList.add('hidden');
@@ -461,8 +488,51 @@ function renderBarChart(barData) {
   const canvas = document.getElementById('expenseChart');
   if (!canvas || !barData) return;
 
+  if (canvas.parentElement) {
+    canvas.parentElement.style.height = '650px';
+  }
+
   const ctx = canvas.getContext('2d');
   if (paykalChart) paykalChart.destroy();
+
+  const stackedTotalsPlugin = {
+    id: 'stackedTotals',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      ctx.save();
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#0f172a';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+
+      const datasetCount = chart.data.datasets.length;
+      const labelCount = chart.data.labels.length;
+
+      for (let i = 0; i < labelCount; i++) {
+        let total = 0;
+        let maxX = -Infinity;
+        let yPos = 0;
+
+        for (let d = 0; d < datasetCount; d++) {
+          const val = Number(chart.data.datasets[d].data[i]) || 0;
+          total += val;
+
+          const meta = chart.getDatasetMeta(d);
+          if (meta && meta.data[i]) {
+            yPos = meta.data[i].y;
+            if (meta.data[i].x > maxX) {
+              maxX = meta.data[i].x;
+            }
+          }
+        }
+
+        if (total > 0 && maxX !== -Infinity) {
+          ctx.fillText(formatHUF(total), maxX + 8, yPos);
+        }
+      }
+      ctx.restore();
+    }
+  };
 
   paykalChart = new Chart(ctx, {
     type: 'bar',
@@ -473,16 +543,42 @@ function renderBarChart(barData) {
         { label: 'Számla', data: barData.bank, backgroundColor: '#3b82f6', borderRadius: 6 }
       ]
     },
+    plugins: [stackedTotalsPlugin],
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      layout: {
+        padding: { right: 90 }
+      },
       scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 14, weight: '500' }, color: '#334155' } },
-        y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 14 }, color: '#64748b', callback: function(v) { return formatHUF(v); } } }
+        x: { 
+          stacked: true, 
+          grid: { color: '#f1f5f9' }, 
+          ticks: { font: { size: 18 }, color: '#64748b', callback: function(v) { return formatHUF(v); } } 
+        },
+        y: { 
+          stacked: true, 
+          grid: { display: false }, 
+          ticks: { font: { size: 20, weight: '500' }, color: '#334155' } 
+        }
       },
       plugins: {
         legend: { labels: { font: { size: 15, weight: '600' }, color: '#1e293b' } },
-        tooltip: { callbacks: { label: function(context) { return context.dataset.label + ': ' + formatHUF(context.raw); } } }
+        // 👈 MEGNÖVELT MEGMAGYARÁZÓ ABLAK (TOOLTIP) BEÁLLÍTÁSOK:
+        tooltip: {
+          padding: 18,                            // Háromszoros belső margó (ablak mérete)
+          titleFont: { size: 22, weight: 'bold' },// Címfejléc betűmérete
+          bodyFont: { size: 20 },                 // Szöveges tartalom betűmérete
+          boxWidth: 20,                           // Színjelző kocka szélessége
+          boxHeight: 20,                          // Színjelző kocka magassága
+          boxPadding: 8,                          // Kocka és szöveg közti távolság
+          callbacks: {
+            label: function(context) { 
+              return context.dataset.label + ': ' + formatHUF(context.raw); 
+            } 
+          }
+        }
       }
     }
   });
@@ -491,6 +587,11 @@ function renderBarChart(barData) {
 function renderLineChart(labels, values) {
   const canvas = document.getElementById('expenseChart');
   if (!canvas) return;
+
+  // 👈 VISSZAÁLLÍTJUK AZ ALAPÉRTELMEZETT MAGASSÁGOT
+  if (canvas.parentElement) {
+    canvas.parentElement.style.height = '260px';
+  }
 
   const ctx = canvas.getContext('2d');
   if (paykalChart) paykalChart.destroy();
@@ -777,27 +878,16 @@ function loadSettings() {
       fillSelect("expenseExtraSetting", data.settingF, "Válassz kategóriát (Opcionális)");
       fillSelect("newProjectType", data.projectTypes, "Válassz típust...");
 
+      // A #projectSelect-et ITT NEM írjuk felül vakon, mert azt a renderPayKalDashboardUI kezeli dinamikusan a kiválasztott csoportnézethez!
       if (data.activeProjects) {
-        const dashProjectSelect = document.getElementById("projectSelect");
         const transferProjectSelect = document.getElementById("transferProject");
-
-        if (dashProjectSelect) {
-          const currentVal = dashProjectSelect.value;
-          dashProjectSelect.innerHTML = '<option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>';
-          data.activeProjects.forEach(p => {
-            const opt = document.createElement("option");
-            opt.value = p.name;
-            opt.textContent = p.name;
-            dashProjectSelect.appendChild(opt);
-          });
-          if (currentVal) dashProjectSelect.value = currentVal;
-        }
         if (transferProjectSelect) {
           transferProjectSelect.innerHTML = '<option value="" selected>-- Nincs projekthez kötve --</option>';
           data.activeProjects.forEach(p => {
             const opt = document.createElement("option");
-            opt.value = p.name;
-            opt.textContent = p.name;
+            const pName = typeof p === "object" ? (p.name || p.id) : p;
+            opt.value = pName;
+            opt.textContent = pName;
             transferProjectSelect.appendChild(opt);
           });
         }
