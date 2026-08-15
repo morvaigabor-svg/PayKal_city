@@ -16,45 +16,49 @@ function getSettingsData() {
   let incomePaymentMethods = [];
   let settingF = [];
 
-  // Beállítások munkalap
+  // 1. Beállítások munkalap beolvasása
   const settingsSheet = ss.getSheetByName(APP.SHEETS.SETTINGS);
   if (settingsSheet && settingsSheet.getLastRow() >= 2) {
     const lastRow = settingsSheet.getLastRow();
     const data = settingsSheet.getRange(2, 1, lastRow - 1, 6).getValues();
 
     data.forEach(row => {
-      if (row[0]) costCentersBase.push(String(row[0]).trim()); // A2:A
-      if (row[1]) paymentMethods.push(String(row[1]).trim());  // B2:B
-      if (row[2]) incomePurposesBase.push(String(row[2]).trim());// C2:C
-      if (row[3]) incomePaymentMethods.push(String(row[3]).trim());// D2:D
-      if (row[5]) settingF.push(String(row[5]).trim());        // F2:F
+      if (row[0]) costCentersBase.push(String(row[0]).trim());      // A2:A
+      if (row[1]) paymentMethods.push(String(row[1]).trim());       // B2:B
+      if (row[2]) incomePurposesBase.push(String(row[2]).trim());   // C2:C
+      if (row[3]) incomePaymentMethods.push(String(row[3]).trim());   // D2:D
+      if (row[5]) settingF.push(String(row[5]).trim());             // F2:F
     });
   }
 
-  // KM Tagok
+  // 2. KM Tagok beolvasása (A oszlop: Név | B oszlop: Csoport ID)
   let payers = [];
   const membersSheet = ss.getSheetByName(APP.SHEETS.MEMBERS);
   if (membersSheet && membersSheet.getLastRow() >= 2) {
     const mData = membersSheet.getRange(2, 1, membersSheet.getLastRow() - 1, 2).getValues();
+
     mData.forEach(row => {
-      if (String(row[0]).trim() === csoportId && row[1]) {
-        payers.push(String(row[1]).trim());
+      const memberName = row[0] ? String(row[0]).trim() : "";
+      const groupVal = row[1] ? String(row[1]).trim() : "";
+
+      if (memberName !== "" && groupVal === csoportId) {
+        payers.push(memberName);
       }
     });
   }
 
-  // Aktív projektek kinyerése
+  // 3. Aktív projektek kinyerése
   const activeProjects = getActiveProjectsData(csoportId, ss);
   const activeProjectNames = activeProjects.map(p => p.name);
 
-  // 1. Kiadások: Beállítások A2:A + Aktív projektek + "Egyéb kiadások"
+  // Kiadások összekészítése
   const costCenters = [
     ...costCentersBase.filter(item => item.toLowerCase() !== "egyéb" && item.toLowerCase() !== "egyéb kiadások"),
     ...activeProjectNames,
     "Egyéb kiadások"
   ];
 
-  // 2. Bevételek: Beállítások C2:C + Aktív projektek + "Egyéb bevételek"
+  // Bevételek összekészítése
   const incomePurposes = [
     ...incomePurposesBase.filter(item => item.toLowerCase() !== "egyéb" && item.toLowerCase() !== "egyéb bevételek"),
     ...activeProjectNames,
@@ -62,12 +66,12 @@ function getSettingsData() {
   ];
 
   return {
-    costCenters: costCenters,
-    paymentMethods: paymentMethods,
-    incomePurposes: incomePurposes,
-    incomePaymentMethods: incomePaymentMethods,
-    payers: payers,
-    settingF: settingF,
+    costCenters: [...new Set(costCenters)],
+    paymentMethods: [...new Set(paymentMethods)],
+    incomePurposes: [...new Set(incomePurposes)],
+    incomePaymentMethods: [...new Set(incomePaymentMethods)],
+    payers: [...new Set(payers)],
+    settingF: [...new Set(settingF)],
     activeProjects: activeProjects
   };
 }

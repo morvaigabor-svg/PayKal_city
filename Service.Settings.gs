@@ -9,13 +9,11 @@ function getSettingsData() {
     const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     
     // 1. Beállítások munkalap beolvasása
-    // A: Költséghelyek | B: Kifizetés módja | C: Befizetés célja | D: Befizetés módja
     const settingsSheet = ss.getSheetByName(APP.SHEETS.SETTINGS);
     const costCenters = [], paymentMethods = [], incomePurposes = [], incomePaymentMethods = [];
     
     if (settingsSheet && settingsSheet.getLastRow() >= 2) {
-      const lastRow = settingsSheet.getLastRow();
-      const data = settingsSheet.getRange(2, 1, lastRow - 1, 4).getValues();
+      const data = settingsSheet.getRange(2, 1, settingsSheet.getLastRow() - 1, 4).getValues();
       
       data.forEach(row => {
         if (row[0] && String(row[0]).trim() !== "") costCenters.push(String(row[0]).trim());
@@ -25,21 +23,19 @@ function getSettingsData() {
       });
     }
 
-    // 2. KM Tagok munkalap beolvasása
-    // A oszlop: Tag neve | B oszlop: Csoport ID
+    // 2. KM Tagok munkalap beolvasása (A: Név | B: Csoport ID)
     const membersSheet = ss.getSheetByName(APP.SHEETS.MEMBERS);
     const payers = [];
     
     if (membersSheet && membersSheet.getLastRow() >= 2) {
-      const lastRowM = membersSheet.getLastRow();
-      const mData = membersSheet.getRange(2, 1, lastRowM - 1, 2).getValues();
+      const mData = membersSheet.getRange(2, 1, membersSheet.getLastRow() - 1, 2).getValues();
+      const userGroup = String(auth.csoportId).trim();
       
       mData.forEach(row => {
         const memberName = row[0] ? String(row[0]).trim() : "";
         const groupVal = row[1] ? String(row[1]).trim() : "";
         
-        // Csak azokat a neveket adjuk hozzá, ahol a B oszlopbeli Csoport ID megegyezik a vezető ID-jával
-        if (memberName !== "" && groupVal === String(auth.csoportId).trim()) {
+        if (memberName !== "" && groupVal === userGroup) {
           payers.push(memberName);
         }
       });
@@ -58,4 +54,3 @@ function getSettingsData() {
     throw error;
   }
 }
-
