@@ -1,833 +1,628 @@
 <script>
+// === GLOBÁLIS ÁLLAPOTVÁLTOZÓK ===
 let selectedReceipts = [];
 let paykalChart = null;
 let currentPeriod = "1H";
 let currentSelectedProject = "ALL";
+let currentTargetCsoportId = null;
+let currentViewType = "LEADERSHIP_GROUP";
 let currentIncomeData = null;
 
+// === INICIALIZÁLÁS ÉS ESEMÉNYKEZELŐK ===
 document.addEventListener("DOMContentLoaded", function() {
 
-google.script.run
-  .withSuccessHandler(function(auth) {
-    if (auth.authorized) {
-      document.getElementById("unauthorizedView")?.classList.add("hidden");
-      document.getElementById("dashboardView")?.classList.remove("hidden");
-      loadPayKalDashboard(currentPeriod, currentSelectedProject);
-      loadSettings();
-      return;
-    }
+  // Google Autentikáció és Koordinátori opciók betöltése
+  google.script.run
+    .withSuccessHandler(function(auth) {
+      if (auth.authorized) {
+        document.getElementById("unauthorizedView")?.classList.add("hidden");
+        document.getElementById("dashboardView")?.classList.remove("hidden");
 
-    document.getElementById("dashboardView")?.classList.add("hidden");
-    document.getElementById("unauthorizedView")?.classList.remove("hidden");
+        if (auth.isCoordinator) {
+          const coordCard = document.getElementById("coordinatorSelectorCard");
+          const coordSelect = document.getElementById("coordinatorGroupSelect");
+          
+          if (coordCard && coordSelect && auth.coordinatorOptions) {
+            coordCard.classList.remove("hidden");
+            coordSelect.innerHTML = "";
+            
+            auth.coordinatorOptions.forEach(opt => {
+              const optionEl = document.createElement("option");
+              optionEl.value = opt.id;
+              optionEl.dataset.viewType = opt.viewType;
+              optionEl.textContent = opt.name;
+              coordSelect.appendChild(optionEl);
+            });
+            
+            currentTargetCsoportId = auth.csoportId;
+            currentViewType = "LEADERSHIP_GROUP";
+            coordSelect.value = currentTargetCsoportId;
+          }
+        }
 
-    const titleEl = document.getElementById("unauthorizedTitle");
-    const emailTextEl = document.getElementById("unauthorizedEmailText");
-    const subTextEl = document.getElementById("unauthorizedSubText");
-    const switchBtn = document.getElementById("switchAccountBtn");
+        loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType);
+        loadSettings();
+        return;
+      }
 
-    if (auth.isUnknown || !auth.email) {
-      if (titleEl) {
-        titleEl.innerText = "🔑 Azonosítás szükséges";
-        titleEl.style.color = "#1976d2";
-      }
-      if (emailTextEl) {
-        emailTextEl.innerText = "Az alkalmazás használatához azonosítanod kell a Google-fiókodat.";
-      }
-      if (subTextEl) {
-        subTextEl.innerText = "Kattints az alábbi gombra a belépéshez!";
-      }
-      if (switchBtn) {
-        switchBtn.innerText = "🔑 Bejelentkezés / Azonosítás";
-      }
-    } else {
-      if (titleEl) {
-        titleEl.innerText = "🚫 Hozzáférés megtagadva";
-        titleEl.style.color = "#d32f2f";
-      }
-      if (emailTextEl) {
-        emailTextEl.innerHTML = "Sajnos a(z) <strong style='color:#d32f2f;'>" + auth.email + "</strong> e-mail cím nem jogosult a felület használatához.";
-      }
-      if (subTextEl) {
-        subTextEl.innerText = "Ha van engedélyezett (pl. @km.piarista.hu) fiókod, kérjük válts át rá, vagy kérj hozzáférést az adminisztrátortól!";
-      }
-      if (switchBtn) {
-        switchBtn.innerText = "🔄 Fiók váltása másik címre";
-      }
-    }
+      document.getElementById("dashboardView")?.classList.add("hidden");
+      document.getElementById("unauthorizedView")?.classList.remove("hidden");
+    })
+    .getUserAuth();
 
-    if (switchBtn && auth.switchAccountUrl) {
-      switchBtn.href = auth.switchAccountUrl;
-      switchBtn.target = "_top";
-    }
-  })
-  .withFailureHandler(function(err) {
-    console.error("Autentikációs hiba:", err);
-    document.getElementById("unauthorizedView")?.classList.remove("hidden");
-  })
-  .getUserAuth();
-
+  // Mai dátumok beállítása az űrlapokon
   try {
     const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    const formattedDate = `${year}-${month}-${day}`;
-
+    const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     if (document.getElementById("date")) document.getElementById("date").value = formattedDate;
     if (document.getElementById("incomeDate")) document.getElementById("incomeDate").value = formattedDate;
     if (document.getElementById("transferDate")) document.getElementById("transferDate").value = formattedDate;
   } catch (e) {
-    console.error(e);
+    console.error("Dátum beállítási hiba:", e);
   }
 
-  document.getElementById("backToDashBtn")?.addEventListener("click", () => { 
-    showScreen("dashboardView"); 
-    loadPayKalDashboard(currentPeriod, currentSelectedProject); 
-  });
-  document.getElementById("backToDashFromIncomeBtn")?.addEventListener("click", () => { 
-    showScreen("dashboardView"); 
-    loadPayKalDashboard(currentPeriod, currentSelectedProject); 
-  });
-  document.getElementById("backToDashFromTransferBtn")?.addEventListener("click", () => { 
-    showScreen("dashboardView"); 
-    loadPayKalDashboard(currentPeriod, currentSelectedProject); 
-  });
+  // Navigációs gombok eseménykezelői
+  document.getElementById("backToDashBtn")?.addEventListener("click", () => { showScreen("dashboardView"); loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType); });
+  document.getElementById("backToDashFromIncomeBtn")?.addEventListener("click", () => { showScreen("dashboardView"); loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType); });
+  document.getElementById("backToDashFromTransferBtn")?.addEventListener("click", () => { showScreen("dashboardView"); loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType); });
 
-  document.getElementById("payerSelectTrigger")?.addEventListener("click", function(e) {
-    e.stopPropagation();
-    document.getElementById("payersDropdownPanel")?.classList.toggle("hidden");
-  });
-
-  document.getElementById("payersDropdownPanel")?.addEventListener("click", function(e) {
-    e.stopPropagation();
-  });
-
-  document.addEventListener("click", function() {
-    document.getElementById("payersDropdownPanel")?.classList.add("hidden");
-  });
-
-  document.getElementById("cb_other_payer")?.addEventListener("change", function() {
-    const container = document.getElementById("customPayerContainer");
-    if (this.checked) {
-      container.classList.remove("hidden");
-      document.getElementById("customPayerInput")?.focus();
-    } else {
-      container.classList.add("hidden");
-    }
-    updatePayerBadge();
-  });
-
-  function handleFileSelect(e) {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
-
-    let loadedCount = 0;
-
-    files.forEach((file, index) => {
-      const fileName = file.name || ("blokk_" + (selectedReceipts.length + index + 1) + ".jpg");
-      const reader = new FileReader();
-
-      reader.onload = function(evt) {
-        selectedReceipts.push({
-          data: evt.target.result,
-          name: fileName
-        });
-
-        loadedCount++;
-        if (loadedCount === files.length) {
-          renderReceiptPreviews();
-          document.getElementById("receiptDialog")?.classList.remove("hidden");
-        }
-      };
-
-      reader.readAsDataURL(file);
-    });
-  }
-
+  // Fájl feltöltés / Kamera események (Kiadás)
   document.getElementById("receipt")?.addEventListener("change", handleFileSelect);
   document.getElementById("receiptFile")?.addEventListener("change", handleFileSelect);
 
-  document.getElementById("moreReceiptButton")?.addEventListener("click", function() {
-    document.getElementById("receiptDialog")?.classList.add("hidden");
-    const receiptInput = document.getElementById("receipt");
-    if (receiptInput) receiptInput.value = "";
-    receiptInput?.click();
-  });
+  // Mentés gombok
+  document.getElementById("saveButton")?.addEventListener("click", handleSaveExpense);
+  document.getElementById("saveIncomeBtn")?.addEventListener("click", handleSaveIncome);
+  document.getElementById("saveTransferBtn")?.addEventListener("click", handleSaveTransfer);
 
-  document.getElementById("finishReceiptButton")?.addEventListener("click", function() {
-    document.getElementById("receiptDialog")?.classList.add("hidden");
-  });
-
-  /* Kiadás Mentése */
-  document.getElementById("saveButton")?.addEventListener("click", function() {
-    const amount = document.getElementById("amount").value;
-    const date = document.getElementById("date").value;
-    const costCenter = document.getElementById("costCenter").value;
-    const paymentMethod = document.getElementById("paymentMethod").value;
-    const extraCategory = document.getElementById("expenseExtraSetting")?.value || "";
-    const comment = document.getElementById("comment").value;
-
-    if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
-    if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
-    if (!costCenter) { alert("⚠️ Kérlek válassz költséghelyet!"); return; }
-    if (!paymentMethod) { alert("⚠️ Kérlek válassz fizetési módot!"); return; }
-
-    const expense = { date, amount: Number(amount), costCenter, paymentMethod, extraCategory, comment };
-    window.currentExpense = expense;
-
-    if (selectedReceipts.length === 0) {
-      document.getElementById("noReceiptDialog")?.classList.remove("hidden");
-    } else {
-      showSummary(expense);
-    }
-  });
-
-  document.getElementById("noReceiptBackButton")?.addEventListener("click", function() {
-    document.getElementById("noReceiptDialog")?.classList.add("hidden");
-  });
-
-  document.getElementById("noReceiptContinueButton")?.addEventListener("click", function() {
-    document.getElementById("noReceiptDialog")?.classList.add("hidden");
-    if (window.currentExpense) {
-      showSummary(window.currentExpense);
-    }
-  });
-
-  document.getElementById("cancelButton")?.addEventListener("click", function() {
-    document.getElementById("confirmDialog")?.classList.add("hidden");
-  });
-
-  document.getElementById("confirmButton")?.addEventListener("click", function() {
-    if (!window.currentExpense) return;
-
-    const confirmBtn = document.getElementById("confirmButton");
-    const cancelBtn = document.getElementById("cancelButton");
-    const statusBox = document.getElementById("statusProgress");
-
-    confirmBtn.disabled = true;
-    if (cancelBtn) cancelBtn.disabled = true;
-
-    if (statusBox) {
-      statusBox.classList.remove("hidden");
-      statusBox.style.color = "#1976d2";
-      statusBox.textContent = "⏳ Mentés folyamatban...";
-    }
-
-    if (selectedReceipts.length === 0) {
-      google.script.run
-        .withSuccessHandler(function() {
-          if (statusBox) {
-            statusBox.style.color = "#2e7d32";
-            statusBox.textContent = "✅ Mentés kész!";
-          }
-          setTimeout(finishExpenseSave, 1200);
-        })
-        .withFailureHandler(function(err) {
-          if (statusBox) {
-            statusBox.style.color = "#d32f2f";
-            statusBox.textContent = "⚠️ Hiba a mentés során: " + err;
-          }
-          resetConfirmButtons();
-        })
-        .saveExpense(window.currentExpense, [], null, null);
-      return;
-    }
-
-    google.script.run
-      .withSuccessHandler(function(expenseId) {
-        uploadReceiptImages(expenseId, 0, []);
-      })
-      .withFailureHandler(function(err) {
-        if (statusBox) {
-          statusBox.style.color = "#d32f2f";
-          statusBox.textContent = "⚠️ Hiba az azonosítónál: " + err;
-        }
-        resetConfirmButtons();
-      })
-      .getExpenseId(window.currentExpense.costCenter);
-  });
-
-  /* Bevétel Mentése */
-  document.getElementById("saveIncomeBtn")?.addEventListener("click", function() {
-    const date = document.getElementById("incomeDate").value;
-    const amount = document.getElementById("incomeAmount").value;
-    const purpose = document.getElementById("incomePurpose").value;
-    const paymentMethod = document.getElementById("incomePaymentMethod").value;
-    const comment = document.getElementById("incomeComment").value;
-
-    if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
-    if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
-    if (!purpose) { alert("⚠️ Kérlek válassz befizetés célt!"); return; }
-    if (!paymentMethod) { alert("⚠️ Kérlek válassz befizetési módot!"); return; }
-
-    const checkedPayers = [];
-    document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked").forEach(cb => checkedPayers.push(cb.value));
-
-    const otherCb = document.getElementById("cb_other_payer");
-    if (otherCb && otherCb.checked) {
-      const customName = document.getElementById("customPayerInput").value.trim();
-      if (!customName) { alert("⚠️ Kérlek add meg az 'Egyéb' befizető nevét!"); return; }
-      checkedPayers.push(customName);
-    }
-
-    if (checkedPayers.length === 0) {
-      alert("⚠️ Kérlek válassz ki legalább egy befizetőt!");
-      return;
-    }
-
-    currentIncomeData = { date, amount: Number(amount), purpose, paymentMethod, payers: checkedPayers, comment };
-    document.getElementById("payersDropdownPanel")?.classList.add("hidden");
-
-    showIncomeSummary(currentIncomeData);
-  });
-
-  document.getElementById("cancelIncomeButton")?.addEventListener("click", () => {
-    document.getElementById("incomeConfirmDialog")?.classList.add("hidden");
-  });
-
-  document.getElementById("confirmIncomeButton")?.addEventListener("click", function() {
-    if (!currentIncomeData) return;
-
-    const confirmBtn = document.getElementById("confirmIncomeButton");
-    const cancelBtn = document.getElementById("cancelIncomeButton");
-    const statusBox = document.getElementById("incomeStatusProgress");
-
-    confirmBtn.disabled = true;
-    if (cancelBtn) cancelBtn.disabled = true;
-
-    if (statusBox) {
-      statusBox.classList.remove("hidden");
-      statusBox.style.color = "#1976d2";
-      statusBox.textContent = "⏳ Bevétel rögzítése...";
-    }
-
-    google.script.run
-      .withSuccessHandler(function() {
-        if (statusBox) {
-          statusBox.style.color = "#2e7d32";
-          statusBox.textContent = "✅ Mentés kész!";
-        }
-        setTimeout(function() {
-          document.getElementById("incomeConfirmDialog")?.classList.add("hidden");
-          confirmBtn.disabled = false;
-          if (cancelBtn) cancelBtn.disabled = false;
-          if (statusBox) statusBox.classList.add("hidden");
-          resetIncomeForm();
-          showScreen("dashboardView");
-          loadPayKalDashboard(currentPeriod, currentSelectedProject);
-        }, 1200);
-      })
-      .withFailureHandler(function(err) {
-        if (statusBox) {
-          statusBox.style.color = "#d32f2f";
-          statusBox.textContent = "⚠️ Hiba: " + err;
-        }
-        confirmBtn.disabled = false;
-        if (cancelBtn) cancelBtn.disabled = false;
-      })
-      .saveIncome(currentIncomeData);
-  });
-
-  /* Pénzmozgás Mentése */
-  document.getElementById("saveTransferBtn")?.addEventListener("click", function() {
-    const date = document.getElementById("transferDate").value;
-    const type = document.getElementById("transferType").value;
-    const amount = document.getElementById("transferAmount").value;
-    const project = document.getElementById("transferProject")?.value || "";
-    const comment = document.getElementById("transferComment").value;
-
-    if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
-    if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
-
-    const transferData = { date, type, amount: Number(amount), project, comment };
-    const saveBtn = document.getElementById("saveTransferBtn");
-    const statusBox = document.getElementById("transferStatusProgress");
-
-    saveBtn.disabled = true;
-
-    if (statusBox) {
-      statusBox.classList.remove("hidden");
-      statusBox.style.color = "#1976d2";
-      statusBox.textContent = "⏳ Pénzmozgás rögzítése...";
-    }
-
-    google.script.run
-      .withSuccessHandler(function() {
-        if (statusBox) {
-          statusBox.style.color = "#2e7d32";
-          statusBox.textContent = "✅ Mentés kész!";
-        }
-
-        setTimeout(function() {
-          saveBtn.disabled = false;
-          if (statusBox) {
-            statusBox.classList.add("hidden");
-            statusBox.textContent = "";
-          }
-          resetTransferForm();
-          showScreen("dashboardView");
-          loadPayKalDashboard(currentPeriod, currentSelectedProject);
-        }, 1200);
-      })
-      .withFailureHandler(function(err) {
-        if (statusBox) {
-          statusBox.style.color = "#d32f2f";
-          statusBox.textContent = "⚠️ Hiba a mentés során: " + err;
-        }
-        saveBtn.disabled = false;
-      })
-      .saveTransfer(transferData);
-  });
-
+  // Egyedi Befizető Dropdown Kezelése (Bevétel)
+  setupCustomPayerDropdown();
 });
 
-  function showScreen(screenId) {
-    const screens = ["dashboardView", "expenseScreen", "incomeScreen", "transferScreen"];
-    screens.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.classList.add("hidden");
+// === KÉPERNYŐ VÁLTÁS ===
+function showScreen(screenId) {
+  const screens = ["dashboardView", "expenseScreen", "incomeScreen", "transferScreen"];
+  screens.forEach(id => document.getElementById(id)?.classList.add("hidden"));
+  document.getElementById(screenId)?.classList.remove("hidden");
+}
+
+// === KOORDINÁTORI ÉS PROJEKT SZŰRŐKEZELŐK ===
+function onCoordinatorGroupChange(selectEl) {
+  if (!selectEl) return;
+  
+  const selectedOption = selectEl.options[selectEl.selectedIndex];
+  currentTargetCsoportId = selectedOption.value;
+  currentViewType = selectedOption.dataset.viewType || "LEADERSHIP_GROUP";
+  currentSelectedProject = "ALL";
+  
+  const projSelect = document.getElementById("projectSelect");
+  if (projSelect) projSelect.value = "ALL";
+
+  loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType);
+}
+
+function onProjectFilterChange(selectedVal) {
+  currentSelectedProject = selectedVal;
+  loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType);
+}
+
+// === DASHBOARD ADATOK BETÖLTÉSE ÉS MEGJELENÍTÉSE ===
+function loadPayKalDashboard(period, selectedProject, targetCsoportId, viewType) {
+  currentPeriod = period || currentPeriod;
+  currentSelectedProject = selectedProject !== undefined ? selectedProject : currentSelectedProject;
+  currentTargetCsoportId = targetCsoportId !== undefined ? targetCsoportId : currentTargetCsoportId;
+  currentViewType = viewType || currentViewType;
+
+  google.script.run
+    .withSuccessHandler(renderPayKalDashboardUI)
+    .withFailureHandler(function(err) {
+      console.error("Hiba a Dashboard adatok betöltésekor:", err);
+    })
+    .getPayKalDashboardData(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType);
+}
+
+function updateProjectDropdownOptions(projects, selectedProject) {
+  const projSelect = document.getElementById("projectSelect");
+  if (!projSelect) return;
+
+  // Alaphelyzetbe állítás
+  projSelect.innerHTML = '<option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>';
+
+  if (Array.isArray(projects) && projects.length > 0) {
+    projects.forEach(proj => {
+      const option = document.createElement("option");
+      option.value = proj.id || proj.name || proj;
+      option.textContent = proj.name || proj;
+      projSelect.appendChild(option);
     });
-    
-    const target = document.getElementById(screenId);
-    if (target) target.classList.remove("hidden");
   }
 
-  function onProjectFilterChange(selectedVal) {
-    currentSelectedProject = selectedVal;
-    loadPayKalDashboard(currentPeriod, currentSelectedProject);
-  }
+  projSelect.value = selectedProject || "ALL";
+}
 
-  function loadPayKalDashboard(period, selectedProject) {
-    currentPeriod = period || currentPeriod;
-    currentSelectedProject = selectedProject !== undefined ? selectedProject : currentSelectedProject;
+function renderPayKalDashboardUI(data) {
+  if (!data) return;
 
-    google.script.run
-      .withSuccessHandler(renderPayKalDashboardUI)
-      .withFailureHandler(function(err) {
-        console.error("Hiba a Dashboard adatok betöltésekor:", err);
-      })
-      .getPayKalDashboardData(currentPeriod, currentSelectedProject);
-  }
-
-  function renderPayKalDashboardUI(data) {
-    if (!data) return;
-
-    const balanceLabel = document.querySelector('.balance-label');
-    if (balanceLabel) {
-      if (data.selectedProject && data.selectedProject !== "ALL") {
-        balanceLabel.innerText = `${data.selectedProject} - egyenlege`;
-      } else if (data.csoportId) {
-        balanceLabel.innerText = `${data.csoportId.toUpperCase()} CSOPORT VAGYONA`;
-      }
+  const balanceLabel = document.querySelector('.balance-label');
+  if (balanceLabel) {
+    if (data.viewType === "CITY_SUMMARY") {
+      balanceLabel.innerText = data.displayTitle;
+    } else if (data.selectedProject && data.selectedProject !== "ALL") {
+      balanceLabel.innerText = `${data.selectedProject} - egyenlege`;
+    } else {
+      balanceLabel.innerText = data.displayTitle || "CSOPORT VAGYONA";
     }
+  }
 
-    document.getElementById('totalBalanceDisplay').innerText = formatHUF(data.totalBalance || 0);
-    document.getElementById('cashBalanceDisplay').innerText = formatHUF(data.cashBalance || 0);
-    document.getElementById('bankBalanceDisplay').innerText = formatHUF(data.bankBalance || 0);
+  document.getElementById('totalBalanceDisplay').innerText = formatHUF(data.totalBalance || 0);
+  document.getElementById('cashBalanceDisplay').innerText = formatHUF(data.cashBalance || 0);
+  document.getElementById('bankBalanceDisplay').innerText = formatHUF(data.bankBalance || 0);
 
-    var total = data.totalBalance || 0;
-    var cashPercent = total > 0 ? Math.round(((data.cashBalance || 0) / total) * 100) : 50;
+  const total = data.totalBalance || 0;
+  const cashPercent = total > 0 ? Math.round(((data.cashBalance || 0) / total) * 100) : 50;
+  document.getElementById('cashBar').style.width = cashPercent + '%';
+  document.getElementById('bankBar').style.width = (100 - cashPercent) + '%';
 
-    document.getElementById('cashBar').style.width = cashPercent + '%';
-    document.getElementById('bankBar').style.width = (100 - cashPercent) + '%';
+  const projWrapper = document.getElementById('projectSelectWrapper');
+  const timeGroup = document.getElementById('timeFilterGroup');
+  const actionGrid = document.getElementById('actionButtonsGrid');
 
+  // Gombok elrejtése ha readOnly nézetben vagyunk
+  if (data.readOnly) {
+    if (actionGrid) actionGrid.classList.add('hidden');
+  } else {
+    if (actionGrid) actionGrid.classList.remove('hidden');
+  }
+
+  // Projektek dinamikus frissítése a kapott adatok alapján
+  if (data.projects || data.availableProjects) {
+    updateProjectDropdownOptions(data.projects || data.availableProjects, data.selectedProject);
+  }
+
+  // Diagram kiválasztása (Sávdiagram vs Idősoros vonaldiagram)
+  if (data.chartType === "BAR") {
+    if (projWrapper) projWrapper.classList.add('hidden');
+    if (timeGroup) timeGroup.classList.add('hidden');
+    renderBarChart(data.barData);
+  } else {
+    if (projWrapper) projWrapper.classList.remove('hidden');
+    if (timeGroup) timeGroup.classList.remove('hidden');
     renderLineChart(data.labels || [], data.values || []);
   }
+}
 
-  function changeTimeFilter(period, btnElement) {
-    var buttons = document.querySelectorAll('.time-btn');
-    buttons.forEach(function(btn) { btn.classList.remove('active'); });
+function renderBarChart(barData) {
+  const canvas = document.getElementById('expenseChart');
+  if (!canvas || !barData) return;
 
-    if (btnElement) {
-      btnElement.classList.add('active');
-    }
+  const ctx = canvas.getContext('2d');
+  if (paykalChart) paykalChart.destroy();
 
-    loadPayKalDashboard(period, currentSelectedProject);
-  }
-
-  function renderLineChart(labels, values) {
-    var canvas = document.getElementById('expenseChart');
-    if (!canvas) return;
-
-    var ctx = canvas.getContext('2d');
-    if (paykalChart) paykalChart.destroy();
-
-    var gradient = ctx.createLinearGradient(0, 0, 0, 260);
-    gradient.addColorStop(0, 'rgba(37, 99, 235, 0.25)');
-    gradient.addColorStop(1, 'rgba(37, 99, 235, 0.0)');
-
-    paykalChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: 'Egyenleg',
-          data: values,
-          borderColor: '#2563eb',
-          borderWidth: 3,
-          fill: true,
-          backgroundColor: gradient,
-          tension: 0.35,
-          pointRadius: 4,
-          pointBackgroundColor: '#2563eb'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function(context) { return ' ' + formatHUF(context.raw); }
-            }
-          }
+  paykalChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: barData.labels,
+      datasets: [
+        {
+          label: 'Készpénz',
+          data: barData.cash,
+          backgroundColor: '#10b981',
+          borderRadius: 6
         },
-        scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 16 }, color: '#64748b' } },
-          y: {
-            grid: { color: '#f1f5f9' },
-            ticks: {
-              font: { size: 20 },
-              color: '#64748b',
-              callback: function(v) { return formatHUF(v); }
-            }
+        {
+          label: 'Számla',
+          data: barData.bank,
+          backgroundColor: '#3b82f6',
+          borderRadius: 6
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { 
+          stacked: true, 
+          grid: { display: false },
+          ticks: { font: { size: 14, weight: '500' }, color: '#334155' }
+        },
+        y: { 
+          stacked: true, 
+          grid: { color: '#f1f5f9' },
+          ticks: { 
+            font: { size: 14 }, 
+            color: '#64748b',
+            callback: function(v) { return formatHUF(v); } 
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          labels: { font: { size: 15, weight: '600' }, color: '#1e293b' }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) { return context.dataset.label + ': ' + formatHUF(context.raw); }
           }
         }
       }
-    });
-  }
+    }
+  });
+}
 
-  function formatHUF(amount) {
-    return Number(amount || 0).toLocaleString('hu-HU') + ' Ft';
-  }
+function renderLineChart(labels, values) {
+  const canvas = document.getElementById('expenseChart');
+  if (!canvas) return;
 
-  function loadSettings() {
-    google.script.run
-      .withSuccessHandler(function(data) {
-        if (!data) return;
-        
-        fillSelect("costCenter", data.costCenters, "Válassz költséghelyet");
-        fillSelect("paymentMethod", data.paymentMethods, "Válassz fizetési módot");
-        fillSelect("incomePaymentMethod", data.incomePaymentMethods, "Válassz módot (Pl. Készpénz / Utalás)");
-        fillSelect("incomePurpose", data.incomePurposes, "Válassz célt");
-        fillSelect("expenseExtraSetting", data.settingF, "Válassz kategóriát (Opcionális)");
+  const ctx = canvas.getContext('2d');
+  if (paykalChart) paykalChart.destroy();
 
-        // Aktív projektek benépesítése a Készpénzmozgás és Dashboard legördülőkbe
-        if (data.activeProjects) {
-          const transferProjSelect = document.getElementById("transferProject");
-          if (transferProjSelect) {
-            transferProjSelect.innerHTML = '<option value="">-- Nincs projekthez kötve --</option>';
-            data.activeProjects.forEach(p => {
-              const opt = document.createElement("option");
-              opt.value = p.name;
-              opt.textContent = p.name + " (" + p.type + ")";
-              transferProjSelect.appendChild(opt);
-            });
-          }
+  const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+  gradient.addColorStop(0, 'rgba(37, 99, 235, 0.25)');
+  gradient.addColorStop(1, 'rgba(37, 99, 235, 0.0)');
 
-          const dashProjectSelect = document.getElementById("projectSelect");
-          if (dashProjectSelect) {
-            const currentVal = dashProjectSelect.value;
-            dashProjectSelect.innerHTML = '<option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>';
-            data.activeProjects.forEach(p => {
-              const opt = document.createElement("option");
-              opt.value = p.name;
-              opt.textContent = p.name;
-              dashProjectSelect.appendChild(opt);
-            });
-            if (currentVal) dashProjectSelect.value = currentVal;
-          }
+  paykalChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Egyenleg',
+        data: values,
+        borderColor: '#2563eb',
+        borderWidth: 3,
+        fill: true,
+        backgroundColor: gradient,
+        tension: 0.35,
+        pointRadius: 4,
+        pointBackgroundColor: '#2563eb'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: function(context) { return ' ' + formatHUF(context.raw); } } }
+      },
+      scales: {
+        x: { 
+          grid: { display: false }, 
+          ticks: { font: { size: 14, weight: '500' }, color: '#64748b' } 
+        },
+        y: { 
+          grid: { color: '#f1f5f9' }, 
+          ticks: { font: { size: 14 }, color: '#64748b', callback: function(v) { return formatHUF(v); } } 
         }
+      }
+    }
+  });
+}
 
-        const payersList = document.getElementById("payersCheckboxList");
-        if (payersList && data.payers) {
-          payersList.innerHTML = "";
-          data.payers.forEach(function(payer) {
-            const label = document.createElement("label");
-            label.className = "checkbox-item";
-            const cb = document.createElement("input");
-            cb.type = "checkbox";
-            cb.value = payer;
-            cb.addEventListener("change", updatePayerBadge);
-            label.appendChild(cb);
-            label.appendChild(document.createTextNode(payer));
-            payersList.appendChild(label);
-          });
-        }
-      })
-      .getSettings();
-  }
+function changeTimeFilter(period, btnElement) {
+  const buttons = document.querySelectorAll('.time-btn');
+  buttons.forEach(btn => btn.classList.remove('active'));
+  if (btnElement) btnElement.classList.add('active');
+  loadPayKalDashboard(period, currentSelectedProject, currentTargetCsoportId, currentViewType);
+}
 
-  function fillSelect(elementId, items, placeholder) {
-    const select = document.getElementById(elementId);
-    if (select && items) {
-      select.innerHTML = '<option value="" disabled selected>' + placeholder + '</option>';
-      items.forEach(item => {
-        const option = document.createElement("option");
-        option.value = item;
-        option.textContent = item;
-        select.appendChild(option);
+// === FÁJL ÉS BLOKK FELTÖLTÉS LOGIKA ===
+function handleFileSelect(event) {
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
+
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      selectedReceipts.push({
+        name: file.name,
+        type: file.type,
+        data: e.target.result
       });
-    }
-  }
-
-  function updatePayerBadge() {
-    const checkedCount = document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked").length;
-    const otherCb = document.getElementById("cb_other_payer");
-    const isOther = otherCb && otherCb.checked ? 1 : 0;
-    const total = checkedCount + isOther;
-
-    const triggerText = document.getElementById("payerSelectText");
-    if (triggerText) {
-      triggerText.textContent = total === 0 ? "Válassz befizető(k)et..." : "Kijelölve: " + total + " fő";
-    }
-  }
-
-  function renderReceiptPreviews() {
-    const previewContainer = document.getElementById("receiptPreview");
-    if (!previewContainer) return;
-
-    if (selectedReceipts.length === 0) {
-      previewContainer.innerHTML = "";
-      return;
-    }
-
-    let html = '<ul style="list-style: none; padding: 0 0 0 90px; margin: 10px 0 0 0; text-align: left;">';
-    selectedReceipts.forEach((item, idx) => {
-      html += `<li style="padding: 4px 0; border-bottom: 1px solid #eee; font-size: 14px;">
-        <span><strong>${idx + 1}. kép</strong> -- ${item.name}</span>
-        <sup onclick="removeReceipt(${idx})" style="cursor: pointer; color: #888; font-weight: bold; margin-left: 6px; font-size: 18px;" title="Törlés">✕</sup>
-      </li>`;
-    });
-    html += '</ul>';
-    previewContainer.innerHTML = html;
-  }
-
-  function removeReceipt(index) {
-    selectedReceipts.splice(index, 1);
-    renderReceiptPreviews();
-  }
-
-  function uploadReceiptImages(expenseId, index, uploadedUrls) {
-    const statusBox = document.getElementById("statusProgress");
-    if (statusBox) {
-      statusBox.classList.remove("hidden");
-      statusBox.style.color = "#1976d2";
-      statusBox.textContent = `⏳ Blokk feltöltése (${index + 1}/${selectedReceipts.length})...`;
-    }
-
-    google.script.run
-      .withSuccessHandler(function(result) {
-        uploadedUrls.push(result.url);
-        if (index + 1 < selectedReceipts.length) {
-          uploadReceiptImages(expenseId, index + 1, uploadedUrls);
-        } else {
-          if (statusBox) statusBox.textContent = "⏳ Költség rögzítése...";
-          google.script.run
-            .withSuccessHandler(function() {
-              if (statusBox) {
-                statusBox.style.color = "#2e7d32";
-                statusBox.textContent = "✅ Mentés kész!";
-              }
-              setTimeout(finishExpenseSave, 1200);
-            })
-            .withFailureHandler(function(err) {
-              if (statusBox) {
-                statusBox.style.color = "#d32f2f";
-                statusBox.textContent = "⚠️ Hiba a mentés során: " + err;
-              }
-              resetConfirmButtons();
-            })
-            .saveExpense(window.currentExpense, uploadedUrls, expenseId, null);
-        }
-      })
-      .withFailureHandler(function(err) {
-        if (statusBox) {
-          statusBox.style.color = "#d32f2f";
-          statusBox.textContent = "⚠️ Hiba a kép feltöltése során: " + err;
-        }
-        resetConfirmButtons();
-      })
-      .uploadExpenseImage(selectedReceipts[index].data, expenseId, index + 1);
-  }
-
-  function showSummary(expense) {
-    document.getElementById("summary").innerHTML = 
-      "<p><strong>Dátum:</strong> " + expense.date + "</p>" +
-      "<p><strong>Összeg:</strong> " + formatHUF(expense.amount) + "</p>" +
-      "<p><strong>Költséghely:</strong> " + expense.costCenter + "</p>" +
-      "<p><strong>Fizetési mód:</strong> " + expense.paymentMethod + "</p>" +
-      "<p><strong>Kategória:</strong> " + (expense.extraCategory || "-") + "</p>" +
-      "<p><strong>Megjegyzés:</strong> " + (expense.comment || "-") + "</p>" +
-      "<p><strong>Csatolt blokkok:</strong> " + selectedReceipts.length + " db</p>";
-
-    const confirmBtn = document.getElementById("confirmButton");
-    if (confirmBtn) confirmBtn.style.backgroundColor = "#2e7d32";
-
-    document.getElementById("confirmDialog")?.classList.remove("hidden");
-  }
-
-  function finishExpenseSave() {
-    document.getElementById("confirmDialog")?.classList.add("hidden");
-    resetConfirmButtons();
-    resetExpenseForm();
-    showScreen("dashboardView");
-    loadPayKalDashboard(currentPeriod, currentSelectedProject);
-  }
-
-  function resetConfirmButtons() {
-    const confirmBtn = document.getElementById("confirmButton");
-    const cancelBtn = document.getElementById("cancelButton");
-    const statusBox = document.getElementById("statusProgress");
-
-    if (confirmBtn) confirmBtn.disabled = false;
-    if (cancelBtn) cancelBtn.disabled = false;
-    if (statusBox) {
-      statusBox.classList.add("hidden");
-      statusBox.textContent = "";
-    }
-  }
-
-  function resetExpenseForm() {
-    document.getElementById("amount").value = "";
-    document.getElementById("comment").value = "";
-    if (document.getElementById("costCenter")) document.getElementById("costCenter").selectedIndex = 0;
-    if (document.getElementById("paymentMethod")) document.getElementById("paymentMethod").selectedIndex = 0;
-    if (document.getElementById("expenseExtraSetting")) document.getElementById("expenseExtraSetting").selectedIndex = 0;
-    selectedReceipts = [];
-    renderReceiptPreviews();
-    const receiptInput = document.getElementById("receipt");
-    if (receiptInput) receiptInput.value = "";
-    const receiptFileInput = document.getElementById("receiptFile");
-    if (receiptFileInput) receiptFileInput.value = "";
-  }
-
-  function showIncomeSummary(income) {
-    const totalSum = income.amount * income.payers.length;
-    document.getElementById("incomeSummary").innerHTML = 
-      "<p><strong>Dátum:</strong> " + income.date + "</p>" +
-      "<p><strong>Összeg / fő:</strong> " + formatHUF(income.amount) + "</p>" +
-      "<p><strong>Befizetés célja:</strong> " + income.purpose + "</p>" +
-      "<p><strong>Befizetés módja:</strong> " + income.paymentMethod + "</p>" +
-      "<p><strong>Kijelölt befizetők (" + income.payers.length + " fő):</strong><br><i>" + income.payers.join(", ") + "</i></p>" +
-      "<p style='font-size: 18px; color: #2e7d32; margin-top: 10px;'><strong>Összesen rögzítve: " + formatHUF(totalSum) + "</strong></p>";
-
-    const confirmBtn = document.getElementById("confirmIncomeButton");
-    if (confirmBtn) confirmBtn.style.backgroundColor = "#2e7d32";
-
-    document.getElementById("incomeConfirmDialog")?.classList.remove("hidden");
-  }
-
-  function resetIncomeForm() {
-    document.getElementById("incomeAmount").value = "";
-    document.getElementById("incomeComment").value = "";
-    if (document.getElementById("incomePurpose")) document.getElementById("incomePurpose").selectedIndex = 0;
-    if (document.getElementById("incomePaymentMethod")) document.getElementById("incomePaymentMethod").selectedIndex = 0;
-    document.querySelectorAll("#payersCheckboxList input[type='checkbox']").forEach(cb => cb.checked = false);
-    if (document.getElementById("cb_other_payer")) document.getElementById("cb_other_payer").checked = false;
-    if (document.getElementById("customPayerInput")) document.getElementById("customPayerInput").value = "";
-    document.getElementById("customPayerContainer")?.classList.add("hidden");
-    document.getElementById("payersDropdownPanel")?.classList.add("hidden");
-    updatePayerBadge();
-  }
-
-  function resetTransferForm() {
-    document.getElementById("transferAmount").value = "";
-    document.getElementById("transferComment").value = "";
-    if (document.getElementById("transferType")) document.getElementById("transferType").selectedIndex = 0;
-    if (document.getElementById("transferProject")) document.getElementById("transferProject").selectedIndex = 0;
-  }
-
-function openProjectModal() {
-  document.getElementById('projectModal').style.display = 'block';
-  loadProjectTypesDropdown();
-  loadProjectList();
+      renderReceiptPreviews();
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
-function closeProjectModal() {
-  document.getElementById('projectModal').style.display = 'none';
+function renderReceiptPreviews() {
+  const container = document.getElementById("receiptPreview");
+  if (!container) return;
+  container.innerHTML = "";
+
+  selectedReceipts.forEach((file, index) => {
+    const previewDiv = document.createElement("div");
+    previewDiv.style.cssText = "display: inline-block; position: relative; margin: 5px;";
+
+    if (file.type.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = file.data;
+      img.style.cssText = "width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 1px solid #ccc;";
+      previewDiv.appendChild(img);
+    } else {
+      const docBox = document.createElement("div");
+      docBox.textContent = "📄 PDF";
+      docBox.style.cssText = "width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; background: #e2e8f0; border-radius: 6px; font-weight: bold; font-size: 12px;";
+      previewDiv.appendChild(docBox);
+    }
+
+    const removeBtn = document.createElement("span");
+    removeBtn.innerHTML = "&times;";
+    removeBtn.style.cssText = "position: absolute; top: -5px; right: -5px; background: red; color: white; border-radius: 50%; width: 18px; height: 18px; text-align: center; line-height: 16px; cursor: pointer; font-size: 12px; font-weight: bold;";
+    removeBtn.onclick = function() {
+      selectedReceipts.splice(index, 1);
+      renderReceiptPreviews();
+    };
+
+    previewDiv.appendChild(removeBtn);
+    container.appendChild(previewDiv);
+  });
 }
 
-function loadProjectTypesDropdown() {
-  const select = document.getElementById('newProjectType');
-  select.innerHTML = '<option value="">-- Válassz típust --</option>';
-  
-  google.script.run
-    .withSuccessHandler(function(types) {
-      if (types && types.length > 0) {
-        types.forEach(function(type) {
-          const opt = document.createElement('option');
-          opt.value = type;
-          opt.textContent = type;
-          select.appendChild(opt);
-        });
-      } else {
-        select.innerHTML = '<option value="">Nincs elérhető típus</option>';
-      }
-    })
-    .withFailureHandler(function(err) {
-      console.error("Típusok betöltési hiba:", err);
-    })
-    .getProjectTypes();
-}
+// === KIADÁS MENTÉSE ===
+function handleSaveExpense() {
+  const date = document.getElementById("date").value;
+  const amount = document.getElementById("amount").value;
+  const costCenter = document.getElementById("costCenter").value;
+  const paymentMethod = document.getElementById("paymentMethod").value;
+  const extraSetting = document.getElementById("expenseExtraSetting").value;
+  const comment = document.getElementById("comment").value;
 
-function loadProjectList() {
-  const container = document.getElementById('projectListContainer');
-  container.innerHTML = '<p style="color: #64748b; font-size: 16px;">Projektek betöltése...</p>';
-
-  google.script.run
-    .withSuccessHandler(renderProjectList)
-    .withFailureHandler(function(err) {
-      container.innerHTML = '<p style="color: #ef4444; font-size: 15px;">Hiba történt a projektek betöltésekor.</p>';
-      console.error("Projekt lista hiba:", err);
-    })
-    .getActiveProjects();
-}
-
-function renderProjectList(projects) {
-  const container = document.getElementById('projectListContainer');
-  
-  if (!projects || projects.length === 0) {
-    container.innerHTML = '<p style="color: #94a3b8; font-size: 18px; font-style: italic; margin: 0;">Nincsenek aktív projektek ehhez a csoporthoz.</p>';
+  if (!date || !amount || !costCenter || !paymentMethod) {
+    alert("Kérjük, töltsön ki minden kötelező mezőt (*)");
     return;
   }
 
-  let html = '<div style="display: flex; flex-direction: column; gap: 10px; width: 100%;">';
-  
-  projects.forEach(function(proj) {
-    const projName = proj.nev || proj.name || 'Névtelen';
-    const projType = proj.tipus || proj.type || 'Nincs típus';
+  const saveBtn = document.getElementById("saveButton");
+  saveBtn.disabled = true;
+  saveBtn.innerText = "Mentés folyamatban...";
 
-    html += `
-      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; width: 100%;">
-        
-        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px;">
-          <strong style="color: #0f172a; font-size: 28px; font-weight: 600;">${projName}</strong>
-          <span style="color: #64748b; font-style: italic; font-size: 25px; margin-left: 8px;">(${projType})</span>
-        </div>
-        
-        <button type="button" onclick="handleArchiveProject('${proj.id}')" 
-                style="width: auto !important; min-width: unset !important; max-width: fit-content !important; flex: 0 0 auto !important; padding: 6px 14px !important; font-size: 26px !important; height: auto !important; line-height: 1.2 !important; background: #ffffff !important; color: #dc2626 !important; border: 1px solid #fca5a5 !important; border-radius: 6px !important; cursor: pointer !important; font-weight: 500 !important; margin: 0 !important; text-align: center !important;"
-                onmouseover="this.style.background='#fef2f2'" 
-                onmouseout="this.style.background='#ffffff'">
-          Archiválás
-        </button>
+  google.script.run
+    .withSuccessHandler(function(expenseId) {
+      // GPS Koordináták lekérése ha elérhető
+      let gpsCoords = "";
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            gpsCoords = `${pos.coords.latitude}, ${pos.coords.longitude}`;
+            executeExpenseSave(expenseId, gpsCoords);
+          },
+          err => { executeExpenseSave(expenseId, ""); },
+          { timeout: 5000 }
+        );
+      } else {
+        executeExpenseSave(expenseId, "");
+      }
+    })
+    .getExpenseId(costCenter);
 
-      </div>
-    `;
-  });
+  function executeExpenseSave(expenseId, gpsCoords) {
+    const expenseData = {
+      date: date,
+      amount: amount,
+      costCenter: costCenter,
+      paymentMethod: paymentMethod,
+      extraSetting: extraSetting,
+      comment: comment
+    };
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        alert("Kiadás sikeresen rögzítve!");
+        saveBtn.disabled = false;
+        saveBtn.innerText = "Mentés";
+        selectedReceipts = [];
+        renderReceiptPreviews();
+        document.getElementById("amount").value = "";
+        document.getElementById("comment").value = "";
+        showScreen("dashboardView");
+        loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType);
+      })
+      .withFailureHandler(function(err) {
+        alert("Hiba történt a mentés során: " + err);
+        saveBtn.disabled = false;
+        saveBtn.innerText = "Mentés";
+      })
+      .saveExpense(expenseData, selectedReceipts, expenseId, gpsCoords);
+  }
+}
+
+// === BEVISELŐ / BEFIZETŐ DROPDOWN BEÁLLÍTÁSA ===
+function setupCustomPayerDropdown() {
+  const trigger = document.getElementById("payerSelectTrigger");
+  const panel = document.getElementById("payersDropdownPanel");
+  const cbOther = document.getElementById("cb_other_payer");
+  const customContainer = document.getElementById("customPayerContainer");
+
+  if (trigger && panel) {
+    trigger.addEventListener("click", function(e) {
+      e.stopPropagation();
+      panel.classList.toggle("hidden");
+    });
+
+    document.addEventListener("click", function(e) {
+      if (!panel.contains(e.target) && !trigger.contains(e.target)) {
+        panel.classList.add("hidden");
+      }
+    });
+  }
+
+  if (cbOther && customContainer) {
+    cbOther.addEventListener("change", function() {
+      if (this.checked) {
+        customContainer.classList.remove("hidden");
+      } else {
+        customContainer.classList.add("hidden");
+      }
+      updatePayerTriggerText();
+    });
+  }
+}
+
+function updatePayerTriggerText() {
+  const checkboxes = document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked");
+  const selectedNames = Array.from(checkboxes).map(cb => cb.value);
   
-  html += '</div>';
-  container.innerHTML = html;
+  const cbOther = document.getElementById("cb_other_payer");
+  const customInput = document.getElementById("customPayerInput");
+  if (cbOther && cbOther.checked && customInput && customInput.value.trim() !== "") {
+    selectedNames.push(customInput.value.trim());
+  }
+
+  const triggerText = document.getElementById("payerSelectText");
+  if (triggerText) {
+    if (selectedNames.length === 0) {
+      triggerText.textContent = "Válassz befizető(k)et...";
+    } else {
+      triggerText.textContent = selectedNames.join(", ");
+    }
+  }
+}
+
+// === BEVÉTEL MENTÉSE ===
+function handleSaveIncome() {
+  const date = document.getElementById("incomeDate").value;
+  const amount = document.getElementById("incomeAmount").value;
+  const purpose = document.getElementById("incomePurpose").value;
+  const paymentMethod = document.getElementById("incomePaymentMethod").value;
+  const comment = document.getElementById("incomeComment").value;
+
+  const checkboxes = document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked");
+  let selectedPayers = Array.from(checkboxes).map(cb => cb.value);
+
+  const cbOther = document.getElementById("cb_other_payer");
+  const customInput = document.getElementById("customPayerInput");
+  if (cbOther && cbOther.checked && customInput && customInput.value.trim() !== "") {
+    selectedPayers.push(customInput.value.trim());
+  }
+
+  if (!date || !amount || !purpose || !paymentMethod || selectedPayers.length === 0) {
+    alert("Kérjük, töltsön ki minden kötelező mezőt és válasszon legalább egy befizetőt!");
+    return;
+  }
+
+  const saveBtn = document.getElementById("saveIncomeBtn");
+  saveBtn.disabled = true;
+  saveBtn.innerText = "Mentés folyamatban...";
+
+  const incomeData = {
+    date: date,
+    amount: amount,
+    purpose: purpose,
+    paymentMethod: paymentMethod,
+    payers: selectedPayers,
+    comment: comment
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      alert("Bevétel sikeresen rögzítve!");
+      saveBtn.disabled = false;
+      saveBtn.innerText = "Mentés";
+      document.getElementById("incomeAmount").value = "";
+      document.getElementById("incomeComment").value = "";
+      showScreen("dashboardView");
+      loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType);
+    })
+    .withFailureHandler(function(err) {
+      alert("Hiba történt a bevétel mentése során: " + err);
+      saveBtn.disabled = false;
+      saveBtn.innerText = "Mentés";
+    })
+    .saveIncome(incomeData);
+}
+
+// === KÉSZPÉNZ MOZGÁS (ÁTVEZETÉS) MENTÉSE ===
+function handleSaveTransfer() {
+  const date = document.getElementById("transferDate").value;
+  const type = document.getElementById("transferType").value;
+  const amount = document.getElementById("transferAmount").value;
+  const project = document.getElementById("transferProject").value;
+  const comment = document.getElementById("transferComment").value;
+
+  if (!date || !type || !amount) {
+    alert("Kérjük, töltsön ki minden kötelező mezőt!");
+    return;
+  }
+
+  const saveBtn = document.getElementById("saveTransferBtn");
+  saveBtn.disabled = true;
+  saveBtn.innerText = "Mentés folyamatban...";
+
+  const transferData = {
+    date: date,
+    type: type,
+    amount: amount,
+    project: project,
+    comment: comment
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      alert("Pénzmozgás sikeresen rögzítve!");
+      saveBtn.disabled = false;
+      saveBtn.innerText = "Mentés";
+      document.getElementById("transferAmount").value = "";
+      document.getElementById("transferComment").value = "";
+      showScreen("dashboardView");
+      loadPayKalDashboard(currentPeriod, currentSelectedProject, currentTargetCsoportId, currentViewType);
+    })
+    .withFailureHandler(function(err) {
+      alert("Hiba történt a pénzmozgás mentésekor: " + err);
+      saveBtn.disabled = false;
+      saveBtn.innerText = "Mentés";
+    })
+    .saveTransfer(transferData);
+}
+
+// === PROJEKTEK KEZELÉSE (MODAL & LÉTREHOZÁS) ===
+function openProjectModal() {
+  const modal = document.getElementById("projectModal");
+  if (modal) {
+    modal.style.display = "block";
+    loadProjectsList();
+  }
+}
+
+function closeProjectModal() {
+  const modal = document.getElementById("projectModal");
+  if (modal) modal.style.display = "none";
+}
+
+function loadProjectsList() {
+  const container = document.getElementById("projectListContainer");
+  if (!container) return;
+
+  container.innerHTML = "<p style='color: #64748b;'>Projektek betöltése...</p>";
+
+  google.script.run
+    .withSuccessHandler(function(projects) {
+      if (!projects || projects.length === 0) {
+        container.innerHTML = "<p style='color: #94a3b8;'>Nincsenek aktív projektek.</p>";
+        return;
+      }
+
+      container.innerHTML = "";
+      projects.forEach(p => {
+        const item = document.createElement("div");
+        item.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #f1f5f9;";
+        item.innerHTML = `
+          <div>
+            <strong style="font-size: 16px; color: #1e293b;">${p.name}</strong>
+            <span style="font-size: 13px; color: #64748b; margin-left: 8px;">(${p.type})</span>
+          </div>
+          <button type="button" onclick="toggleProjectStatus('${p.name}')" style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">
+            Lezárás
+          </button>
+        `;
+        container.appendChild(item);
+      });
+    })
+    .getProjectsList();
 }
 
 function handleCreateProject() {
-  const nameInput = document.getElementById('newProjectName');
-  const typeSelect = document.getElementById('newProjectType');
-  
-  const name = nameInput.value.trim();
-  const type = typeSelect.value;
+  const name = document.getElementById("newProjectName")?.value;
+  const type = document.getElementById("newProjectType")?.value;
 
   if (!name || !type) {
     alert("Kérjük, adja meg a projekt nevét és típusát!");
@@ -836,28 +631,86 @@ function handleCreateProject() {
 
   google.script.run
     .withSuccessHandler(function() {
-      nameInput.value = '';
-      typeSelect.value = '';
-      loadProjectList();
-      loadSettings();
+      alert("Új projekt sikeresen létrehozva!");
+      document.getElementById("newProjectName").value = "";
+      loadProjectsList();
+      loadSettings(); // Projekt opciók frissítése a lenyíló menükben
     })
-    .withFailureHandler(function(err) {
-      alert("Hiba a mentés során: " + err.message);
-    })
-    .addProject(name, type);
+    .createProject(name, type);
 }
 
-function handleArchiveProject(projectId) {
-  if (!confirm("Biztosan archiválni szeretnéd ezt a projektet?")) return;
-
+// === BEÁLLÍTÁSOK FÁJL ÉS SELECT FELTÖLTÉSEK ===
+function loadSettings() {
   google.script.run
-    .withSuccessHandler(function() {
-      loadProjectList();
-      loadSettings();
+    .withSuccessHandler(function(data) {
+      if (!data) return;
+      fillSelect("costCenter", data.costCenters, "Válassz költséghelyet");
+      fillSelect("paymentMethod", data.paymentMethods, "Válassz fizetési módot");
+      fillSelect("incomePaymentMethod", data.incomePaymentMethods, "Válassz módot (Pl. Készpénz / Utalás)");
+      fillSelect("incomePurpose", data.incomePurposes, "Válassz célt");
+      fillSelect("expenseExtraSetting", data.settingF, "Válassz kategóriát (Opcionális)");
+      fillSelect("newProjectType", data.projectTypes, "Válassz típust...");
+
+      // Csatolt projektek frissítése a szűrőben
+      if (data.activeProjects) {
+        const dashProjectSelect = document.getElementById("projectSelect");
+        const transferProjectSelect = document.getElementById("transferProject");
+
+        if (dashProjectSelect) {
+          const currentVal = dashProjectSelect.value;
+          dashProjectSelect.innerHTML = '<option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>';
+          data.activeProjects.forEach(p => {
+            const opt = document.createElement("option");
+            opt.value = p.name;
+            opt.textContent = p.name;
+            dashProjectSelect.appendChild(opt);
+          });
+          if (currentVal) dashProjectSelect.value = currentVal;
+        }
+
+        if (transferProjectSelect) {
+          transferProjectSelect.innerHTML = '<option value="" selected>-- Nincs projekthez kötve --</option>';
+          data.activeProjects.forEach(p => {
+            const opt = document.createElement("option");
+            opt.value = p.name;
+            opt.textContent = p.name;
+            transferProjectSelect.appendChild(opt);
+          });
+        }
+      }
+
+      // Befizetők névsorának feltöltése (Checkboxy-ok)
+      if (data.members) {
+        const payersList = document.getElementById("payersCheckboxList");
+        if (payersList) {
+          payersList.innerHTML = "";
+          data.members.forEach(m => {
+            const label = document.createElement("label");
+            label.className = "checkbox-item";
+            label.style.cssText = "display: block; padding: 4px 0;";
+            label.innerHTML = `<input type="checkbox" value="${m}" onchange="updatePayerTriggerText()"> ${m}`;
+            payersList.appendChild(label);
+          });
+        }
+      }
     })
-    .withFailureHandler(function(err) {
-      alert("Hiba az archiválás során: " + err.message);
-    })
-    .archiveProject(projectId);
+    .getSettings();
+}
+
+function fillSelect(elementId, items, placeholder) {
+  const select = document.getElementById(elementId);
+  if (select && items) {
+    select.innerHTML = '<option value="" disabled selected>' + placeholder + '</option>';
+    items.forEach(item => {
+      const option = document.createElement("option");
+      option.value = item;
+      option.textContent = item;
+      select.appendChild(option);
+    });
+  }
+}
+
+function formatHUF(amount) {
+  return Number(amount || 0).toLocaleString('hu-HU') + ' Ft';
 }
 </script>

@@ -1,23 +1,107 @@
 /**
  * Service.Dashboard.gs
- * PayKal Dashboard Adatkezelő - Számolótábla alapú hibatűrő feldolgozás
+ * PayKal Dashboard Adatkezelő - 3 koordinátori nézettel és Sávdiagram támogatással
  */
 
-function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
+function getPayKalDashboardDataImpl(timeFilter, selectedProject, targetCsoportId, viewType) {
   const auth = getUserAuth();
   if (!auth.authorized) {
     throw new Error("Jogosulatlan hozzáférés!");
   }
-  const csoportId = String(auth.csoportId || "").trim();
-  const currentProject = selectedProject ? String(selectedProject).trim() : "ALL";
 
+  // Alapértelmezett beállítások
+  let activeTarget = targetCsoportId || auth.csoportId;
+  let activeViewType = viewType || "LEADERSHIP_GROUP";
+
+  // Ellenőrzés: ha nem koordinátor, csak a saját csoportját érheti el
+  if (!auth.isCoordinator) {
+    activeTarget = auth.csoportId;
+    activeViewType = "STANDARD";
+  }
+
+  const currentProject = selectedProject ? String(selectedProject).trim() : "ALL";
   const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+
+  // Város csoportjainak lekérése
+  let cityGroupIds = [];
+  const userCity = auth.userCity || "";
   
+  if (userCity) {
+    const groupsSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.GROUPS) ? APP.SHEETS.GROUPS : "Csoportok";
+    const groupsSheet = ss.getSheetByName(groupsSheetName);
+    if (groupsSheet && groupsSheet.getLastRow() >= 2) {
+      const groupsData = groupsSheet.getRange(2, 1, groupsSheet.getLastRow() - 1, 2).getValues();
+      for (let i = 0; i < groupsData.length; i++) {
+        const gId = String(groupsData[i][0] || "").trim();
+        const gCity = String(groupsData[i][1] || "").trim();
+        if (gCity.toLowerCase() === userCity.toLowerCase()) {
+          cityGroupIds.push(gId);
+        }
+      }
+    }
+  }
+
+  // --- 1. NÉZET: VÁROSI ÖSSZESÍTŐ (SÁVDIAGRAMMAL) ---
+  if (activeViewType === "CITY_SUMMARY") {
+    let cityTotalCash = 0;
+    let cityTotalBank = 0;
+    let cityTotal = 0;
+
+    const groupBalances = {}; // { KMCS101: { cash: X, bank: Y, total: Z } }
+    cityGroupIds.forEach(id => { groupBalances[id] = { cash: 0, bank: 0, total: 0 }; });
+
+    const balanceSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.BALANCE) ? APP.SHEETS.BALANCE : "Egyenleg";
+    const balanceSheet = ss.getSheetByName(balanceSheetName);
+
+    if (balanceSheet && balanceSheet.getLastRow() >= 2) {
+      const balanceData = balanceSheet.getRange(2, 1, balanceSheet.getLastRow() - 1, 4).getValues();
+      for (let i = 0; i < balanceData.length; i++) {
+        const rowGId = String(balanceData[i][0]).trim();
+        if (cityGroupIds.includes(rowGId)) {
+          const c = parseAmount(balanceData[i][1]);
+          const b = parseAmount(balanceData[i][2]);
+          const t = parseAmount(balanceData[i][3]) || (c + b);
+
+          groupBalances[rowGId] = { cash: c, bank: b, total: t };
+          cityTotalCash += c;
+          cityTotalBank += b;
+          cityTotal += t;
+        }
+      }
+    }
+
+    // Sávdiagram adatstruktúrájának felépítése
+    const barLabels = [];
+    const barCashData = [];
+    const barBankData = [];
+
+    Object.keys(groupBalances).forEach(gId => {
+      barLabels.push(gId);
+      barCashData.push(groupBalances[gId].cash);
+      barBankData.push(groupBalances[gId].bank);
+    });
+
+    return {
+      viewType: "CITY_SUMMARY",
+      displayTitle: `${userCity.toUpperCase()} - ÖSSZVAGYON`,
+      totalBalance: cityTotal,
+      cashBalance: cityTotalCash,
+      bankBalance: cityTotalBank,
+      chartType: "BAR", // Frontend sávdiagram jelző
+      barData: {
+        labels: barLabels,
+        cash: barCashData,
+        bank: barBankData
+      },
+      readOnly: true // Gombok elrejtése
+    };
+  }
+
+  // --- 2. És 3. NÉZET: EGYEDI CSOPORTNÉZET (Saját vagy kiválasztott) ---
   let totalBalance = 0;
   let cashBalance = 0;
   let bankBalance = 0;
 
-  // 1. ÖSSZVAGYON LEKÉRÉSE (ha "ALL" van kijelölve)
   if (currentProject === "ALL") {
     const balanceSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.BALANCE) ? APP.SHEETS.BALANCE : "Egyenleg";
     const balanceSheet = ss.getSheetByName(balanceSheetName);
@@ -25,7 +109,7 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
     if (balanceSheet && balanceSheet.getLastRow() >= 2) {
       const balanceData = balanceSheet.getRange(2, 1, balanceSheet.getLastRow() - 1, 4).getValues();
       for (let i = 0; i < balanceData.length; i++) {
-        if (String(balanceData[i][0]).trim() === csoportId) {
+        if (String(balanceData[i][0]).trim() === activeTarget) {
           cashBalance = parseAmount(balanceData[i][1]);
           bankBalance = parseAmount(balanceData[i][2]);
           totalBalance = parseAmount(balanceData[i][3]) || (cashBalance + bankBalance);
@@ -35,44 +119,30 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
     }
   }
 
-  // 2. SZÁMOLÓTÁBLA FELDOLGOZÁSA
+  // Számolótábla idősor adatai
   const calcSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.CALC) ? APP.SHEETS.CALC : "Számolótábla";
   const calcSheet = ss.getSheetByName(calcSheetName);
 
   const dailyDeltas = {};
   let totalNetDelta = 0;
-
-  // Projekt szűrőhöz tartozó változók
   let projCashDelta = 0;
   let projBankDelta = 0;
   let projTotalDelta = 0;
 
-  // Csoport szűrőhöz tartozó globális változók (tartalék főegyenleghez)
-  let allGroupCashDelta = 0;
-  let allGroupBankDelta = 0;
-  let allGroupTotalDelta = 0;
-
   if (calcSheet && calcSheet.getLastRow() >= 2) {
-    // A-K oszlopok beolvasása (11 oszlop)
-    const calcData = calcSheet.getRange(2, 1, calcSheet.getLastRow() - 1, 11).getValues(); 
+    const calcData = calcSheet.getRange(2, 1, calcSheet.getLastRow() - 1, 11).getValues();
     
     for (let i = 0; i < calcData.length; i++) {
-      const rowCsoport = String(calcData[i][0] || "").trim();   // A: Csoport_ID
-      const rawDate = calcData[i][2];                            // C: Dátum
-      const rowProjId = String(calcData[i][3] || "").trim();     // D: Projekt ID
-      const rowProjName = String(calcData[i][4] || "").trim();   // E: Tranzakció célja / Projekt neve
-      
-      const netDelta = parseAmount(calcData[i][8]);              // I: Egyenleg változás (Ft)
-      const cashDelta = parseAmount(calcData[i][9]);             // J: Készpénz változás
-      const bankDelta = parseAmount(calcData[i][10]);            // K: Számla változás
+      const rowCsoport = String(calcData[i][0] || "").trim();
+      const rawDate = calcData[i][2];
+      const rowProjId = String(calcData[i][3] || "").trim();
+      const rowProjName = String(calcData[i][4] || "").trim();
 
-      if (rowCsoport === csoportId) {
-        // Globális csoportösszegek gyűjtése
-        allGroupCashDelta += cashDelta;
-        allGroupBankDelta += bankDelta;
-        allGroupTotalDelta += netDelta;
+      const netDelta = parseAmount(calcData[i][8]);
+      const cashDelta = parseAmount(calcData[i][9]);
+      const bankDelta = parseAmount(calcData[i][10]);
 
-        // Szűrés ellenőrzése: Egyezik ID-ra, Névre vagy "ALL"-ra
+      if (rowCsoport.toLowerCase() === activeTarget.toLowerCase()) {
         const matchesProject = (currentProject === "ALL") || 
                                (rowProjId.toLowerCase() === currentProject.toLowerCase()) || 
                                (rowProjName.toLowerCase() === currentProject.toLowerCase());
@@ -94,42 +164,28 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
     }
   }
 
-  // Egyenlegek beállítása
   if (currentProject !== "ALL") {
     cashBalance = projCashDelta;
     bankBalance = projBankDelta;
     totalBalance = projTotalDelta;
-  } else if (totalBalance === 0 && (allGroupTotalDelta !== 0 || allGroupCashDelta !== 0)) {
-    // Ha az Egyenleg munkalapról nem jött adat, a Számolótábla összesítését használja főegyenlegként
-    cashBalance = allGroupCashDelta;
-    bankBalance = allGroupBankDelta;
-    totalBalance = allGroupTotalDelta;
   }
 
-  // 3. IDŐSOROS DIAGRAM ADATOK ELŐÁLLÍTÁSA
+  // Idősoros grafikon felépítése
   const sortedDates = Object.keys(dailyDeltas).sort();
   const initialBalance = totalBalance - totalNetDelta;
 
   let runningBalance = initialBalance;
   const timeSeries = sortedDates.map(dateStr => {
     runningBalance += dailyDeltas[dateStr];
-    
     const parts = dateStr.split('-');
-    const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1;
-    const day = parseInt(parts[2], 10);
-    const dObj = new Date(year, month, day);
-
     return {
-      dateStr: dateStr,
-      dateObj: dObj,
+      dateObj: new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)),
       balance: runningBalance
     };
   });
 
   const now = new Date();
   let startDate = new Date();
-
   switch (timeFilter) {
     case '1H': startDate.setMonth(now.getMonth() - 1); break;
     case '3H': startDate.setMonth(now.getMonth() - 3); break;
@@ -141,50 +197,45 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
   }
 
   const filteredPoints = timeSeries.filter(pt => pt.dateObj >= startDate && pt.dateObj <= now);
-
   const labels = [];
   const values = [];
 
   if (filteredPoints.length > 0) {
     filteredPoints.forEach(pt => {
-      const month = String(pt.dateObj.getMonth() + 1).padStart(2, '0');
-      const day = String(pt.dateObj.getDate()).padStart(2, '0');
-      labels.push(`${month}.${day}.`);
+      labels.push(`${String(pt.dateObj.getMonth() + 1).padStart(2, '0')}.${String(pt.dateObj.getDate()).padStart(2, '0')}.`);
       values.push(pt.balance);
     });
   } else {
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    labels.push(`${month}.${day}.`);
+    labels.push(`${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}.`);
     values.push(totalBalance);
   }
 
+  const isOwnGroup = (activeTarget === auth.csoportId);
+
   return {
-    csoportId: csoportId,
+    viewType: activeViewType,
+    csoportId: activeTarget,
+    displayTitle: isOwnGroup ? `${activeTarget.toUpperCase()} CSOPORT VAGYONA` : `${activeTarget.toUpperCase()} (CSOPORTNÉZET)`,
     selectedProject: currentProject,
     totalBalance: totalBalance,
     cashBalance: cashBalance,
     bankBalance: bankBalance,
+    chartType: "LINE",
     labels: labels,
-    values: values
+    values: values,
+    readOnly: !isOwnGroup // Csak a saját vezetői csoportjában aktívak a gombok!
   };
 }
 
 function formatDateKey(rawDate) {
   if (!rawDate) return null;
   const tz = (typeof APP !== 'undefined' && APP.TIMEZONE) ? APP.TIMEZONE : Session.getScriptTimeZone();
-
-  if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
-    return Utilities.formatDate(rawDate, tz, "yyyy-MM-dd");
-  }
-  
+  if (rawDate instanceof Date && !isNaN(rawDate.getTime())) return Utilities.formatDate(rawDate, tz, "yyyy-MM-dd");
   if (typeof rawDate === 'string' && rawDate.trim() !== '') {
     let clean = rawDate.trim().replace(/\./g, '-').replace(/\s+/g, '');
     if (clean.endsWith('-')) clean = clean.slice(0, -1);
     const d = new Date(clean);
-    if (!isNaN(d.getTime())) {
-      return Utilities.formatDate(d, tz, "yyyy-MM-dd");
-    }
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, tz, "yyyy-MM-dd");
   }
   return null;
 }
@@ -192,12 +243,7 @@ function formatDateKey(rawDate) {
 function parseAmount(val) {
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   if (!val) return 0;
-  
-  let str = String(val).trim().replace(/[\s\u200B-\u200D\uFEFF]/g, '');
-  str = str.replace(',', '.');
-  str = str.replace(/[−–]/g, '-');
-  str = str.replace(/[^0-9.-]/g, '');
-  
+  let str = String(val).trim().replace(/[\s\u200B-\u200D\uFEFF]/g, '').replace(',', '.').replace(/[−–]/g, '-').replace(/[^0-9.-]/g, '');
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 }

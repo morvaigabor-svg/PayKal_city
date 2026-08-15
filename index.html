@@ -38,6 +38,16 @@
       </header>
 
       <main class="dashboard-content">
+
+        <!-- KOORDINÁTORI CSOPORTVÁLTÓ SÁV -->
+        <div id="coordinatorSelectorCard" class="card hidden" style="margin-bottom: 16px; background: #f0f9ff; border: 1px solid #bae6fd; padding: 6px 18px; border-radius: 12px;">
+          <label for="coordinatorGroupSelect" style="font-weight: 700; color: #0369a1; font-size: 35px; margin-bottom: 3px; display: block;">
+            👑 Koordinátori nézetválasztó:
+          </label>
+          <select id="coordinatorGroupSelect" onchange="onCoordinatorGroupChange(this)" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #0284c7; font-size: 15px; font-weight: 600; background: #ffffff; color: #0f172a;">
+          </select>
+        </div>
+
         <div class="card balance-card">
           <span class="balance-label">Csoport vagyona</span>
           <h2 id="totalBalanceDisplay" class="total-balance-amount">0 Ft</h2>
@@ -62,13 +72,15 @@
         </div>
 
         <div class="card chart-card">
-          <div class="project-select-wrapper" style="margin-bottom: 12px;">
+          <!-- Projektválasztó (Városi összesítőnél elrejtve) -->
+          <div id="projectSelectWrapper" class="project-select-wrapper" style="margin-bottom: 12px;">
             <select id="projectSelect" onchange="onProjectFilterChange(this.value)" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; background: #fff; font-weight: 500;">
               <option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>
             </select>
           </div>
 
-          <div class="time-filter-group">
+          <!-- Időintervallum gombok (Városi összesítőnél elrejtve) -->
+          <div id="timeFilterGroup" class="time-filter-group">
             <button type="button" class="time-btn active" onclick="changeTimeFilter('1H', this)">1 H</button>
             <button type="button" class="time-btn" onclick="changeTimeFilter('3H', this)">3 H</button>
             <button type="button" class="time-btn" onclick="changeTimeFilter('6H', this)">6 H</button>
@@ -77,12 +89,12 @@
             <button type="button" class="time-btn" onclick="changeTimeFilter('O', this)">Ö</button>
           </div>
 
-          <div class="chart-container">
-            <canvas id="expenseChart"></canvas>
-          </div>
-        </div>
+        <div class="chart-container" style="position: relative; height: 340px; min-height: 340px;">
+  <canvas id="expenseChart"></canvas>
+</div>
 
-        <div class="action-buttons-grid">
+        <!-- AKCIÓ GOMBOK (ReadOnly nézetben rejtve) -->
+        <div id="actionButtonsGrid" class="action-buttons-grid">
           <button type="button" id="addIncomeBtn" class="action-btn btn-income" onclick="showScreen('incomeScreen')">
             <span class="btn-icon">💰</span>
             <span>Bevétel hozzáadása</span>
@@ -138,7 +150,6 @@
           <option value="" disabled selected>Válassz fizetési módot</option>
         </select>
 
-        <!-- ÚJ LEGERDÜLŐ MENÜ (Beállítások F2:F) MEGJEGYZÉS FELETT -->
         <label for="expenseExtraSetting">Elszámolási kategória (Opcionális)</label>
         <select id="expenseExtraSetting">
           <option value="" selected>Válassz kategóriát (Opcionális)</option>
@@ -235,7 +246,6 @@
         <label for="transferAmount">Összeg (Ft) *</label>
         <input type="number" id="transferAmount" placeholder="Összeg Ft-ban">
 
-        <!-- ÚJ OPCIONÁLIS PROJEKT VÁLASZTÓ -->
         <label for="transferProject">Kapcsolódó projekt (Opcionális)</label>
         <select id="transferProject">
           <option value="" selected>-- Nincs projekthez kötve --</option>
