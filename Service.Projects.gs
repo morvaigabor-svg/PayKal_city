@@ -3,6 +3,33 @@
  * Dinamikus projektek és beállítások kezelése
  */
 
+/**
+ * Szekvenciális projekt azonosító generálása (PRJ-YYYYMMDD-001)
+ */
+function generateProjectId(sheet) {
+  const timeZone = (typeof APP !== 'undefined' && APP.TIMEZONE) ? APP.TIMEZONE : Session.getScriptTimeZone();
+  const dateStr = Utilities.formatDate(new Date(), timeZone, "yyyyMMdd");
+  const prefix = "PRJ-" + dateStr + "-";
+  
+  let maxSeq = 0;
+  if (sheet.getLastRow() >= 2) {
+    const ids = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues();
+    ids.forEach(r => {
+      const id = String(r[0] || "").trim();
+      if (id.startsWith(prefix)) {
+        const seqNum = parseInt(id.replace(prefix, ""), 10);
+        if (!isNaN(seqNum) && seqNum > maxSeq) {
+          maxSeq = seqNum;
+        }
+      }
+    });
+  }
+  return prefix + String(maxSeq + 1).padStart(3, '0');
+}
+
+/**
+ * Beállítások és törzsadatok beolvasása a felület számára
+ */
 function getSettingsData() {
   const auth = getUserAuth();
   if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
@@ -33,7 +60,7 @@ function getSettingsData() {
     });
   }
 
-  // 2. KM Tagok beolvasása (A oszlop: Név | B oszlop: Csoport ID)
+  // 2. Tagok beolvasása (A oszlop: Név | B oszlop: Csoport ID)
   let payers = [];
   const membersSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.MEMBERS) ? APP.SHEETS.MEMBERS : "Tagok";
   const membersSheet = ss.getSheetByName(membersSheetName);
@@ -45,17 +72,17 @@ function getSettingsData() {
       const memberName = row[0] ? String(row[0]).trim() : "";
       const groupVal = row[1] ? String(row[1]).trim() : "";
 
-      if (memberName !== "" && groupVal === csoportId) {
+      if (memberName !== "" && groupVal.toLowerCase() === csoportId.toLowerCase()) {
         payers.push(memberName);
       }
     });
   }
-  
-// Koordinátorok esetén a "KM Egyesület" automatikus hozzáadása a lista elejére
+
+  // Koordinátorok esetén a "KM Egyesület" automatikus hozzáadása
   if (auth.isCoordinator) {
     payers.unshift("KM Egyesület");
   }
-  
+
   // 3. Aktív projektek kinyerése
   const activeProjects = getActiveProjectsData(csoportId, ss);
   const activeProjectNames = activeProjects.map(p => p.name);
@@ -86,6 +113,9 @@ function getSettingsData() {
   };
 }
 
+/**
+ * Aktív projektek lekérése adott csoport azonosító alapján
+ */
 function getActiveProjectsData(csoportId, ssInstance) {
   const ss = ssInstance || SpreadsheetApp.openById(CONFIG.SHEET_ID);
   const sheet = ss.getSheetByName("Projektek");
@@ -95,13 +125,15 @@ function getActiveProjectsData(csoportId, ssInstance) {
   const projects = [];
 
   for (let i = 0; i < data.length; i++) {
-    const rowCsoport = String(data[i][0]).trim();
-    const projektId = String(data[i][1]).trim();
-    const projektNeve = String(data[i][2]).trim();
-    const tipus = String(data[i][3]).trim();
+    const rowCsoport = String(data[i][0] || "").trim();
+    const projektId = String(data[i][1] || "").trim();
+    const projektNeve = String(data[i][2] || "").trim();
+    const tipus = String(data[i][3] || "").trim();
     const aktiv = data[i][4];
 
-    if (rowCsoport === String(csoportId).trim() && (aktiv === true || String(aktiv).toUpperCase() === 'TRUE')) {
+    const isActive = (aktiv === true || String(aktiv).toUpperCase() === 'TRUE');
+
+    if (rowCsoport.toLowerCase() === String(csoportId).trim().toLowerCase() && isActive) {
       if (projektNeve) {
         projects.push({
           id: projektId,
@@ -114,6 +146,9 @@ function getActiveProjectsData(csoportId, ssInstance) {
   return projects;
 }
 
+/**
+ * Projekt típusok beolvasása szerepkör alapján (E oszlop = 5: Csoportvezető | G oszlop = 7: Koordinátor)
+ */
 function getProjectTypes(ssInstance) {
   const auth = getUserAuth();
   if (!auth.authorized) {
@@ -128,11 +163,7 @@ function getProjectTypes(ssInstance) {
     return [];
   }
 
-  // Oszlop meghatározása szerepkör alapján:
-  // Koordinátor -> G oszlop (7. oszlop)
-  // Csoportvezető -> C oszlop (3. oszlop)
-  const targetColumn = auth.isCoordinator ? 7 : 3;
-
+  const targetColumn = auth.isCoordinator ? 7 : 5;
   const values = settingsSheet.getRange(2, targetColumn, settingsSheet.getLastRow() - 1, 1).getValues();
 
   return values
@@ -140,12 +171,25 @@ function getProjectTypes(ssInstance) {
     .filter(val => val !== "");
 }
 
-function getActiveProjects() {
+/**
+ * Kliensoldalról hívható lekérdező funkciók
+ */
+function getActiveProjects(targetCsoportId) {
   const auth = getUserAuth();
   if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
+  const csoportId = String(targetCsoportId || auth.csoportId || "").trim();
+  return getActiveProjectsData(csoportId);
+}
+
+function getProjectsList() {
+  const auth = getUserAuth();
+  if (!auth.authorized) return [];
   return getActiveProjectsData(auth.csoportId);
 }
 
+/**
+ * Új projekt létrehozása szekvenciális azonosítóval
+ */
 function addProject(name, type, targetCsoportId) {
   const auth = getUserAuth();
   if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
@@ -157,7 +201,6 @@ function addProject(name, type, targetCsoportId) {
     throw new Error("A projekt neve és típusa is kötelező!");
   }
 
-  // Csoport azonosító feloldása (ha a koordinátor átadja, vagy fallback a saját csoportjára)
   const csoportId = String(targetCsoportId || auth.csoportId || "").trim();
   if (!csoportId) {
     throw new Error("Nem azonosítható a célcsoport azonosítója!");
@@ -170,11 +213,8 @@ function addProject(name, type, targetCsoportId) {
     sheet.appendRow(["Csoport_ID", "Projekt_ID", "Projekt_Neve", "Projekt_Típusa", "Aktív"]);
   }
 
-  const timeZone = (typeof APP !== 'undefined' && APP.TIMEZONE) ? APP.TIMEZONE : Session.getScriptTimeZone();
-  const timeStamp = Utilities.formatDate(new Date(), timeZone, "yyyyMMdd");
-  const projectId = "PRJ-" + timeStamp + "-" + Math.floor(1000 + Math.random() * 9000);
+  const projectId = generateProjectId(sheet);
 
-  // Új projekt hozzáfűzése a Projektek munkalaphoz (A-E oszlopok)
   sheet.appendRow([
     csoportId,
     projectId,
@@ -190,20 +230,39 @@ function addProject(name, type, targetCsoportId) {
   };
 }
 
-function archiveProject(projectId) {
+function createProject(name, type) {
+  return addProject(name, type);
+}
+
+/**
+ * Projekt lezárása / archiválása
+ */
+function archiveProject(projectIdentifier, targetCsoportId) {
   const auth = getUserAuth();
   if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
 
+  const csoportId = String(targetCsoportId || auth.csoportId || "").trim();
   const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
   const sheet = ss.getSheetByName("Projektek");
   if (!sheet || sheet.getLastRow() < 2) return { success: false };
 
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
   for (let i = 0; i < data.length; i++) {
-    if (String(data[i][0]).trim() === String(auth.csoportId).trim() && String(data[i][1]).trim() === String(projectId).trim()) {
+    const rowCsoport = String(data[i][0] || "").trim();
+    const rowProjId = String(data[i][1] || "").trim();
+    const rowProjName = String(data[i][2] || "").trim();
+
+    if (rowCsoport.toLowerCase() === csoportId.toLowerCase() && 
+       (rowProjId.toLowerCase() === String(projectIdentifier).trim().toLowerCase() || 
+        rowProjName.toLowerCase() === String(projectIdentifier).trim().toLowerCase())) {
       sheet.getRange(i + 2, 5).setValue(false);
-      break;
+      return { success: true };
     }
   }
-  return { success: true };
+  return { success: false };
+}
+
+function toggleProjectStatus(projectName) {
+  const res = archiveProject(projectName);
+  return res.success;
 }

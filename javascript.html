@@ -961,6 +961,13 @@ function openProjectModal() {
   const modal = document.getElementById("projectModal");
   if (modal) {
     modal.style.display = "block";
+    
+    // Státuszüzenetek törlése az ablak megnyitásakor
+    const saveStatus = document.getElementById("projectSaveStatus");
+    const actionStatus = document.getElementById("projectActionStatus");
+    if (saveStatus) saveStatus.textContent = "";
+    if (actionStatus) actionStatus.textContent = "";
+    
     loadProjectsList();
   }
 }
@@ -970,66 +977,153 @@ function closeProjectModal() {
   if (modal) modal.style.display = "none";
 }
 
+/**
+ * Aktív projektek listázása (200%-os betűméret, egy soros elrendezés, szoros keretű gomb)
+ */
+/**
+ * Aktív projektek listázása (egysoros elrendezés, jobb oldalra igazított, kompakt gomb)
+ */
 function loadProjectsList() {
   const container = document.getElementById("projectListContainer");
   if (!container) return;
-  container.innerHTML = "<p style='color: #64748b;'>Projektek betöltése...</p>";
+
+  container.innerHTML = "<p style='color: #64748b; font-size: 16px;'>Projektek betöltése...</p>";
 
   google.script.run
     .withSuccessHandler(function(projects) {
       if (!projects || projects.length === 0) {
-        container.innerHTML = "<p style='color: #94a3b8;'>Nincsenek aktív projektek.</p>";
+        container.innerHTML = "<p style='color: #94a3b8; font-size: 18px;'>Nincsenek aktív projektek.</p>";
         return;
       }
+
       container.innerHTML = "";
+
       projects.forEach(p => {
         const item = document.createElement("div");
-        item.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #f1f5f9;";
+        // Szigorú egysoros flexbox igazítás (nincs sormagasság-törés)
+        item.style.cssText = "display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: space-between !important; flex-wrap: nowrap !important; padding: 12px 0; border-bottom: 1px solid #e2e8f0; gap: 12px;";
+
         item.innerHTML = `
-          <div>
-            <strong style="font-size: 16px; color: #1e293b;">${p.name}</strong>
-            <span style="font-size: 13px; color: #64748b; margin-left: 8px;">(${p.type})</span>
+          <!-- Bal oldal: Projekt neve és típusa -->
+          <div style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <span style="font-size: 26px; font-weight: 700; color: #1e293b; vertical-align: middle;">
+              ${p.name}
+            </span>
+            <span style="font-size: 18px; color: #64748b; margin-left: 8px; font-weight: normal; vertical-align: middle;">
+              (${p.type})
+            </span>
           </div>
-          <button type="button" onclick="toggleProjectStatus('${p.name}')" style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">
+
+          <!-- Jobb oldal: Kompakt gomb, szorosan a feliratra méretezve -->
+          <button type="button" 
+                  onclick="handleCloseProject('${p.name}')" 
+                  style="width: auto !important; flex-shrink: 0 !important; display: inline-block !important; font-size: 22px; font-weight: 600; color: #ef4444; border: 1.5px solid #ef4444; background: transparent; padding: 4px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; line-height: 1;">
             Lezárás
           </button>
         `;
         container.appendChild(item);
       });
     })
+    .withFailureHandler(function(err) {
+      container.innerHTML = "<p style='color: #ef4444;'>Hiba a projektek betöltésekor.</p>";
+    })
     .getProjectsList();
 }
 
+/**
+ * Új projekt mentése felületi status visszajelzéssel
+ */
+/**
+ * Új projekt mentése felületi status visszajelzéssel (középre igazítva)
+ */
 function handleCreateProject() {
-  const name = document.getElementById("newProjectName")?.value;
-  const type = document.getElementById("newProjectType")?.value;
+  const nameInput = document.getElementById("newProjectName");
+  const typeSelect = document.getElementById("newProjectType");
+  const statusDiv = document.getElementById("projectSaveStatus");
+
+  const name = nameInput ? nameInput.value.trim() : "";
+  const type = typeSelect ? typeSelect.value : "";
+
+  if (statusDiv) {
+    statusDiv.style.textAlign = "center"; // Középre igazítás kényszerítése
+  }
 
   if (!name || !type) {
-    alert("Kérjük, adja meg a projekt nevét és típusát!");
+    if (statusDiv) {
+      statusDiv.style.color = "#ef4444";
+      statusDiv.textContent = "Kérjük, adja meg a projekt nevét és típusát!";
+    }
     return;
   }
 
+  // Narancssárga státusz: Mentés folyamatban...
+  if (statusDiv) {
+    statusDiv.style.color = "#f59e0b";
+    statusDiv.textContent = "Mentés folyamatban...";
+  }
+
+  const targetGroup = typeof currentTargetCsoportId !== 'undefined' ? currentTargetCsoportId : null;
+
   google.script.run
-    .withSuccessHandler(function() {
-      alert("Új projekt sikeresen létrehozva!");
-      if (document.getElementById("newProjectName")) document.getElementById("newProjectName").value = "";
-      loadProjectsList();
-      loadSettings();
+    .withSuccessHandler(function(res) {
+      if (statusDiv) {
+        statusDiv.style.color = "#10b981";
+        statusDiv.textContent = "Mentés sikeres!";
+      }
+
+      if (nameInput) nameInput.value = "";
+      if (typeSelect) typeSelect.selectedIndex = 0;
+
+      setTimeout(() => {
+        if (statusDiv) statusDiv.textContent = "";
+        loadProjectsList();
+        if (typeof loadSettings === 'function') loadSettings();
+      }, 1500);
     })
-    .createProject(name, type);
+    .withFailureHandler(function(err) {
+      if (statusDiv) {
+        statusDiv.style.color = "#ef4444";
+        statusDiv.textContent = "Hiba a mentés során: " + (err.message || err);
+      }
+    })
+    .createProject(name, type, targetGroup);
 }
 
-function toggleProjectStatus(projectName) {
-  if (!confirm(`Biztosan le szeretné zárni a(z) "${projectName}" projektet?`)) return;
+/**
+ * Projekt lezárása felületi status visszajelzéssel
+ */
+function handleCloseProject(projectName) {
+  const statusDiv = document.getElementById("projectActionStatus");
+
+  // Narancssárga státusz: Lezárás folyamatban...
+  if (statusDiv) {
+    statusDiv.style.color = "#f59e0b";
+    statusDiv.textContent = "Lezárás folyamatban...";
+  }
+
+  const targetGroup = typeof currentTargetCsoportId !== 'undefined' ? currentTargetCsoportId : null;
+
   google.script.run
     .withSuccessHandler(function() {
-      alert("Projekt állapota frissítve!");
-      loadProjectsList();
-      loadSettings();
-    })
-    .toggleProjectStatus(projectName);
-}
+      if (statusDiv) {
+        statusDiv.style.color = "#10b981";
+        statusDiv.textContent = "Projekt lezárva!";
+      }
 
+      setTimeout(() => {
+        if (statusDiv) statusDiv.textContent = "";
+        loadProjectsList();
+        if (typeof loadSettings === 'function') loadSettings();
+      }, 1500);
+    })
+    .withFailureHandler(function(err) {
+      if (statusDiv) {
+        statusDiv.style.color = "#ef4444";
+        statusDiv.textContent = "Hiba a lezárás során: " + (err.message || err);
+      }
+    })
+    .toggleProjectStatus(projectName, targetGroup);
+}
 function formatHUF(amount) {
   if (amount === undefined || amount === null || isNaN(amount)) return "0 Ft";
   return Number(amount).toLocaleString('hu-HU') + ' Ft';
