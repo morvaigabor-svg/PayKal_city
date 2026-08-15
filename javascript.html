@@ -116,6 +116,23 @@ document.addEventListener("DOMContentLoaded", function() {
 
   document.addEventListener("click", function() { document.getElementById("payersDropdownPanel")?.classList.add("hidden"); });
 
+  // --- Egyéb befizető manuális eseménykezelője ---
+  document.getElementById("cb_other_payer")?.addEventListener("change", function() {
+    const container = document.getElementById("customPayerContainer");
+    if (container) {
+      if (this.checked) {
+        container.classList.remove("hidden");
+        container.style.display = "block";
+        const inputEl = document.getElementById("customPayerInput");
+        if (inputEl) setTimeout(() => inputEl.focus(), 100);
+      } else {
+        container.classList.add("hidden");
+        container.style.display = "none";
+      }
+    }
+    updatePayerBadge();
+  });
+
   // --- 2.5 Fájl / Blokk feltöltés ---
   document.getElementById("receipt")?.addEventListener("change", handleFileSelect);
   document.getElementById("receiptFile")?.addEventListener("change", handleFileSelect);
@@ -217,7 +234,7 @@ document.addEventListener("DOMContentLoaded", function() {
     if (!paymentMethod) { alert("⚠️ Kérlek válassz befizetési módot!"); return; }
 
     const checkedPayers = [];
-    document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked").forEach(cb => {
+    document.querySelectorAll("#payersDropdownPanel input[type='checkbox']:checked").forEach(cb => {
       if (cb.id === "cb_other_payer") {
         const customName = document.getElementById("customPayerInput")?.value.trim();
         if (customName) checkedPayers.push(customName);
@@ -712,7 +729,7 @@ function resetIncomeForm() {
   if (document.getElementById("incomePurpose")) document.getElementById("incomePurpose").selectedIndex = 0;
   if (document.getElementById("incomePaymentMethod")) document.getElementById("incomePaymentMethod").selectedIndex = 0;
   
-  document.querySelectorAll("#payersCheckboxList input[type='checkbox']").forEach(cb => cb.checked = false);
+  document.querySelectorAll("#payersDropdownPanel input[type='checkbox']").forEach(cb => cb.checked = false);
   
   const customContainer = document.getElementById("customPayerContainer");
   if (customContainer) {
@@ -736,7 +753,7 @@ function resetTransferForm() {
 }
 
 function updatePayerBadge() {
-  const checkedBoxes = document.querySelectorAll("#payersCheckboxList input[type='checkbox']:checked");
+  const checkedBoxes = document.querySelectorAll("#payersDropdownPanel input[type='checkbox']:checked");
   const total = checkedBoxes.length;
 
   const triggerText = document.getElementById("payerSelectText");
