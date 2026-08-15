@@ -7,10 +7,7 @@
   <meta name="theme-color" content="#1976d2">
   <title>ExpenseTracker</title>
 
-  <!-- Külső könyvtárak -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- Egyedi stílusok beemelése -->
   <?!= include('styles'); ?>
 </head>
 
@@ -18,7 +15,6 @@
   
   <div class="container">
     
-    <!-- FIÓKVÁLTÓ / AZONOSÍTÓ KÁRTYA -->
     <div id="unauthorizedView" class="hidden">
       <div class="card" style="text-align: center; margin-top: 50px; padding: 30px;">
         <h2 id="unauthorizedTitle" style="color: #1976d2; margin-bottom: 15px;">🔑 Google-fiók azonosítása</h2>
@@ -33,21 +29,15 @@
         </a>
       </div>
     </div>
-    
-    <!-- ==========================================
-       1. KÉPERNYŐ: DASHBOARD (FŐOLDAL)
-       ========================================== -->
+
+    <!-- 1. KÉPERNYŐ: DASHBOARD -->
     <div id="dashboardView" class="hidden">
-      
-      <!-- Fejléc -->
       <header class="paykal-header">
         <h1>PayKal</h1>
         <div class="subtitle">Wallet of Calasanz</div>
       </header>
 
       <main class="dashboard-content">
-        
-        <!-- Egyenleg kártya -->
         <div class="card balance-card">
           <span class="balance-label">Csoport vagyona</span>
           <h2 id="totalBalanceDisplay" class="total-balance-amount">0 Ft</h2>
@@ -71,17 +61,13 @@
           </div>
         </div>
 
-        <!-- Diagram kártya és Nézet szűrő -->
         <div class="card chart-card">
-          
-          <!-- Nézet / Projekt kiválasztó legördülő (felirat nélkül) -->
           <div class="project-select-wrapper" style="margin-bottom: 12px;">
             <select id="projectSelect" onchange="onProjectFilterChange(this.value)" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 14px; background: #fff; font-weight: 500;">
               <option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>
             </select>
           </div>
 
-          <!-- Időszak szűrők -->
           <div class="time-filter-group">
             <button type="button" class="time-btn active" onclick="changeTimeFilter('1H', this)">1 H</button>
             <button type="button" class="time-btn" onclick="changeTimeFilter('3H', this)">3 H</button>
@@ -96,7 +82,6 @@
           </div>
         </div>
 
-        <!-- Akciógombok egyenértékű 2x2-es rácsban -->
         <div class="action-buttons-grid">
           <button type="button" id="addIncomeBtn" class="action-btn btn-income" onclick="showScreen('incomeScreen')">
             <span class="btn-icon">💰</span>
@@ -118,10 +103,8 @@
             <span>Projektek kezelése</span>
           </button>
         </div>
-
       </main>
 
-      <!-- Lábléc logókkal -->
       <footer class="paykal-footer">
         <div class="footer-logo">
           <img src="https://drive.google.com/thumbnail?id=16g0VycktoTc1s3CgbwzGCd0leXdN3R-k" alt="Piarista Rend Magyar Tartománya" />
@@ -130,12 +113,9 @@
           <img src="https://drive.google.com/thumbnail?id=1qQJD5SY7IO_6m2CfLmT1z8QNEe_3ZFo6" alt="Kalazancius Mozgalom" />
         </div>
       </footer>
-
     </div>
 
-    <!-- ==========================================
-       2. KÉPERNYŐ: KIADÁS RÖGZÍTŐ
-       ========================================== -->
+    <!-- 2. KÉPERNYŐ: KIADÁS RÖGZÍTŐ -->
     <div id="expenseScreen" class="hidden">
       <button id="backToDashBtn" class="btn-back">⬅ Vissza a Dashboardra</button>
 
@@ -158,6 +138,12 @@
           <option value="" disabled selected>Válassz fizetési módot</option>
         </select>
 
+        <!-- ÚJ LEGERDÜLŐ MENÜ (Beállítások F2:F) MEGJEGYZÉS FELETT -->
+        <label for="expenseExtraSetting">Elszámolási kategória (Opcionális)</label>
+        <select id="expenseExtraSetting">
+          <option value="" selected>Válassz kategóriát (Opcionális)</option>
+        </select>
+
         <label for="comment">Megjegyzés</label>
         <textarea id="comment" placeholder="Megjegyzés"></textarea>
 
@@ -177,9 +163,7 @@
       </div>
     </div>
 
-    <!-- ==========================================
-       3. KÉPERNYŐ: BEVÉTEL RÖGZÍTŐ
-       ========================================== -->
+    <!-- 3. KÉPERNYŐ: BEVÉTEL RÖGZÍTŐ -->
     <div id="incomeScreen" class="hidden">
       <button id="backToDashFromIncomeBtn" class="btn-back">⬅ Vissza a Dashboardra</button>
 
@@ -232,9 +216,7 @@
       </div>
     </div>
 
-    <!-- ==========================================
-       4. KÉPERNYŐ: PÉNZMOZGÁS RÖGZÍTŐ
-       ========================================== -->
+    <!-- 4. KÉPERNYŐ: PÉNZMOZGÁS RÖGZÍTŐ -->
     <div id="transferScreen" class="hidden">
       <button id="backToDashFromTransferBtn" class="btn-back">⬅ Vissza a Dashboardra</button>
 
@@ -253,6 +235,12 @@
         <label for="transferAmount">Összeg (Ft) *</label>
         <input type="number" id="transferAmount" placeholder="Összeg Ft-ban">
 
+        <!-- ÚJ OPCIONÁLIS PROJEKT VÁLASZTÓ -->
+        <label for="transferProject">Kapcsolódó projekt (Opcionális)</label>
+        <select id="transferProject">
+          <option value="" selected>-- Nincs projekthez kötve --</option>
+        </select>
+
         <label for="transferComment">Megjegyzés</label>
         <textarea id="transferComment" placeholder="Megjegyzés (pl. ki intézte)"></textarea>
 
@@ -264,48 +252,42 @@
 
   </div>
 
- <!-- Projektek kezelése FELUGRÓ ABLAK -->
-<div id="projectModal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);">
-  <div style="background-color: #ffffff; margin: 2% auto; padding: 32px 36px; border-radius: 18px; width: 92%; max-width: 760px; min-height: 750px; position: relative; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column;">
-    
-    <!-- FEJLÉC -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 2px solid #f1f5f9; padding-bottom: 16px;">
-      <h3 style="margin: 0; color: #0f172a; font-size: 28px; font-weight: 700;">📁 Projektek kezelése</h3>
-      <span onclick="closeProjectModal()" style="color: #94a3b8; font-size: 36px; font-weight: bold; cursor: pointer; line-height: 1;">&times;</span>
-    </div>
-    
-    <!-- FELSŐ RÉSZ: ÚJ PROJEKT LÉTREHOZÁSA -->
-    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 22px; margin-bottom: 28px;">
-      <!-- Dupla méretű alcím (32px) -->
-      <h4 style="margin: 0 0 16px 0; font-size: 32px; font-weight: 700; color: #334155;">Új projekt létrehozása</h4>
+  <!-- Projektek kezelése FELUGRÓ ABLAK -->
+  <div id="projectModal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);">
+    <div style="background-color: #ffffff; margin: 2% auto; padding: 32px 36px; border-radius: 18px; width: 92%; max-width: 760px; min-height: 750px; position: relative; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column;">
       
-      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
-        <input type="text" id="newProjectName" placeholder="Projekt neve (pl. Őszi kirándulás 2026)" style="width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; box-sizing: border-box;" />
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 2px solid #f1f5f9; padding-bottom: 16px;">
+        <h3 style="margin: 0; color: #0f172a; font-size: 28px; font-weight: 700;">📁 Projektek kezelése</h3>
+        <span onclick="closeProjectModal()" style="color: #94a3b8; font-size: 36px; font-weight: bold; cursor: pointer; line-height: 1;">&times;</span>
+      </div>
+      
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 22px; margin-bottom: 28px;">
+        <h4 style="margin: 0 0 16px 0; font-size: 32px; font-weight: 700; color: #334155;">Új projekt létrehozása</h4>
         
-        <select id="newProjectType" style="width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; font-size: 15px; box-sizing: border-box;">
-          <option value="">Válassz típust...</option>
-        </select>
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+          <input type="text" id="newProjectName" placeholder="Projekt neve (pl. Őszi kirándulás 2026)" style="width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; box-sizing: border-box;" />
+          
+          <select id="newProjectType" style="width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; font-size: 15px; box-sizing: border-box;">
+            <option value="">Válassz típust...</option>
+          </select>
+        </div>
+        
+        <button type="button" onclick="handleCreateProject()" style="width: 100%; background-color: #4f46e5; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 40px;">
+          + Új projekt mentése
+        </button>
       </div>
-      
-      <button type="button" onclick="handleCreateProject()" style="width: 100%; background-color: #4f46e5; color: white; border: none; padding: 14px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 40px;">
-        + Új projekt mentése
-      </button>
-    </div>
 
-    <!-- ALSÓ RÉSZ: AKTÍV PROJEKTEK LISTÁJA -->
-    <div style="border-top: 2px solid #e2e8f0; padding-top: 22px; flex-grow: 1; display: flex; flex-direction: column;">
-      <!-- Dupla méretű alcím (34px) -->
-      <h4 style="margin: 0 0 16px 0; font-size: 34px; font-weight: 700; color: #1e293b;">Aktív projektek</h4>
-      
-      <div id="projectListContainer" style="max-height: 480px; overflow-y: auto; padding-right: 6px; flex-grow: 1;">
-        <p style="color: #64748b; font-size: 18px; margin: 0;">Projektek betöltése...</p>
+      <div style="border-top: 2px solid #e2e8f0; padding-top: 22px; flex-grow: 1; display: flex; flex-direction: column;">
+        <h4 style="margin: 0 0 16px 0; font-size: 34px; font-weight: 700; color: #1e293b;">Aktív projektek</h4>
+        
+        <div id="projectListContainer" style="max-height: 480px; overflow-y: auto; padding-right: 6px; flex-grow: 1;">
+          <p style="color: #64748b; font-size: 18px; margin: 0;">Projektek betöltése...</p>
+        </div>
       </div>
-    </div>
 
+    </div>
   </div>
-</div>
 
-  <!-- JavaScript és Dialogs modulok beemelése -->
   <?!= include('javascript'); ?>
   <?!= include("dialogs"); ?>
 

@@ -1,7 +1,6 @@
 /**
  * Service.Dashboard.gs
- * PayKal Dashboard Adatkezelő
- * Csoportra és projektre szabott aktuális egyenlegek és idősoros alakulás lekérése.
+ * PayKal Dashboard Adatkezelő - Számolótábla alapú hibatűrő feldolgozás
  */
 
 function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
@@ -18,10 +17,11 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
   let cashBalance = 0;
   let bankBalance = 0;
 
-  // 1. AKTUÁLIS EGYENLEGEK LEKÉRÉSE
+  // 1. ÖSSZVAGYON LEKÉRÉSE (ha "ALL" van kijelölve)
   if (currentProject === "ALL") {
-    // Teljes csoportvagyon az 'Egyenleg' lapról
-    const balanceSheet = ss.getSheetByName(APP.SHEETS.BALANCE);
+    const balanceSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.BALANCE) ? APP.SHEETS.BALANCE : "Egyenleg";
+    const balanceSheet = ss.getSheetByName(balanceSheetName);
+    
     if (balanceSheet && balanceSheet.getLastRow() >= 2) {
       const balanceData = balanceSheet.getRange(2, 1, balanceSheet.getLastRow() - 1, 4).getValues();
       for (let i = 0; i < balanceData.length; i++) {
@@ -35,34 +35,58 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
     }
   }
 
-  // 2. BEVÉTELEK ÉS KÖLTSÉGEK FELDOLGOZÁSA
-  const incomeSheet = ss.getSheetByName(APP.SHEETS.INCOME);
-  const expenseSheet = ss.getSheetByName(APP.SHEETS.EXPENSES);
+  // 2. SZÁMOLÓTÁBLA FELDOLGOZÁSA
+  const calcSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.CALC) ? APP.SHEETS.CALC : "Számolótábla";
+  const calcSheet = ss.getSheetByName(calcSheetName);
 
   const dailyDeltas = {};
   let totalNetDelta = 0;
-  let projectIncomeTotal = 0;
-  let projectExpenseTotal = 0;
 
-  // Bevételek feldolgozása (+ delta)
-  if (incomeSheet && incomeSheet.getLastRow() >= 2) {
-    const incomeData = incomeSheet.getRange(2, 1, incomeSheet.getLastRow() - 1, incomeSheet.getLastColumn()).getValues();
-    for (let i = 0; i < incomeData.length; i++) {
-      const rowCsoport = String(incomeData[i][0]).trim();
-      const rawDate = incomeData[i][1];
-      const amount = parseAmount(incomeData[i][3]);
-      // E oszlop (index 4) tárolja a Költséghelyet / Projektnévt
-      const rowProject = String(incomeData[i][4] || "").trim();
+  // Projekt szűrőhöz tartozó változók
+  let projCashDelta = 0;
+  let projBankDelta = 0;
+  let projTotalDelta = 0;
+
+  // Csoport szűrőhöz tartozó globális változók (tartalék főegyenleghez)
+  let allGroupCashDelta = 0;
+  let allGroupBankDelta = 0;
+  let allGroupTotalDelta = 0;
+
+  if (calcSheet && calcSheet.getLastRow() >= 2) {
+    // A-K oszlopok beolvasása (11 oszlop)
+    const calcData = calcSheet.getRange(2, 1, calcSheet.getLastRow() - 1, 11).getValues(); 
+    
+    for (let i = 0; i < calcData.length; i++) {
+      const rowCsoport = String(calcData[i][0] || "").trim();   // A: Csoport_ID
+      const rawDate = calcData[i][2];                            // C: Dátum
+      const rowProjId = String(calcData[i][3] || "").trim();     // D: Projekt ID
+      const rowProjName = String(calcData[i][4] || "").trim();   // E: Tranzakció célja / Projekt neve
+      
+      const netDelta = parseAmount(calcData[i][8]);              // I: Egyenleg változás (Ft)
+      const cashDelta = parseAmount(calcData[i][9]);             // J: Készpénz változás
+      const bankDelta = parseAmount(calcData[i][10]);            // K: Számla változás
 
       if (rowCsoport === csoportId) {
-        // Szűrés a kiválasztott projektre (vagy mindegyikre, ha ALL)
-        if (currentProject === "ALL" || rowProject === currentProject) {
-          if (rawDate && amount > 0) {
+        // Globális csoportösszegek gyűjtése
+        allGroupCashDelta += cashDelta;
+        allGroupBankDelta += bankDelta;
+        allGroupTotalDelta += netDelta;
+
+        // Szűrés ellenőrzése: Egyezik ID-ra, Névre vagy "ALL"-ra
+        const matchesProject = (currentProject === "ALL") || 
+                               (rowProjId.toLowerCase() === currentProject.toLowerCase()) || 
+                               (rowProjName.toLowerCase() === currentProject.toLowerCase());
+
+        if (matchesProject) {
+          projCashDelta += cashDelta;
+          projBankDelta += bankDelta;
+          projTotalDelta += netDelta;
+
+          if (rawDate) {
             const dateKey = formatDateKey(rawDate);
             if (dateKey) {
-              dailyDeltas[dateKey] = (dailyDeltas[dateKey] || 0) + amount;
-              totalNetDelta += amount;
-              projectIncomeTotal += amount;
+              dailyDeltas[dateKey] = (dailyDeltas[dateKey] || 0) + netDelta;
+              totalNetDelta += netDelta;
             }
           }
         }
@@ -70,36 +94,16 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
     }
   }
 
-  // Költségek feldolgozása (- delta)
-  if (expenseSheet && expenseSheet.getLastRow() >= 2) {
-    const expenseData = expenseSheet.getRange(2, 1, expenseSheet.getLastRow() - 1, expenseSheet.getLastColumn()).getValues();
-    for (let i = 0; i < expenseData.length; i++) {
-      const rowCsoport = String(expenseData[i][0]).trim();
-      const rawDate = expenseData[i][1];
-      const amount = parseAmount(expenseData[i][3]);
-      // E oszlop (index 4) tárolja a Költséghelyet / Projektnévt
-      const rowProject = String(expenseData[i][4] || "").trim();
-
-      if (rowCsoport === csoportId) {
-        if (currentProject === "ALL" || rowProject === currentProject) {
-          if (rawDate && amount > 0) {
-            const dateKey = formatDateKey(rawDate);
-            if (dateKey) {
-              dailyDeltas[dateKey] = (dailyDeltas[dateKey] || 0) - amount;
-              totalNetDelta -= amount;
-              projectExpenseTotal += amount;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Ha konkrét projekt van kiválasztva, annak az egyenlege a bevételek és kiadások különbsége
+  // Egyenlegek beállítása
   if (currentProject !== "ALL") {
-    totalBalance = projectIncomeTotal - projectExpenseTotal;
-    cashBalance = 0; // Projekt szinten a fizetési módok megosztása nem releváns
-    bankBalance = 0;
+    cashBalance = projCashDelta;
+    bankBalance = projBankDelta;
+    totalBalance = projTotalDelta;
+  } else if (totalBalance === 0 && (allGroupTotalDelta !== 0 || allGroupCashDelta !== 0)) {
+    // Ha az Egyenleg munkalapról nem jött adat, a Számolótábla összesítését használja főegyenlegként
+    cashBalance = allGroupCashDelta;
+    bankBalance = allGroupBankDelta;
+    totalBalance = allGroupTotalDelta;
   }
 
   // 3. IDŐSOROS DIAGRAM ADATOK ELŐÁLLÍTÁSA
@@ -123,7 +127,6 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject) {
     };
   });
 
-  // Időszak szűrés (timeFilter)
   const now = new Date();
   let startDate = new Date();
 
@@ -188,10 +191,13 @@ function formatDateKey(rawDate) {
 
 function parseAmount(val) {
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
-  if (typeof val === 'string') {
-    const cleaned = val.replace(/[^0-9.-]/g, '');
-    const num = parseFloat(cleaned);
-    return isNaN(num) ? 0 : num;
-  }
-  return 0;
+  if (!val) return 0;
+  
+  let str = String(val).trim().replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+  str = str.replace(',', '.');
+  str = str.replace(/[−–]/g, '-');
+  str = str.replace(/[^0-9.-]/g, '');
+  
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
 }

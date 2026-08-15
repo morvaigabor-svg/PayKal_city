@@ -1,31 +1,22 @@
 <script>
-  /* ==========================================
-   1. GLOBÁLIS VÁLTOZÓK ÉS ÁLLAPOTOK
-   ========================================== */
 let selectedReceipts = [];
 let paykalChart = null;
 let currentPeriod = "1H";
+let currentSelectedProject = "ALL";
 let currentIncomeData = null;
 
-/* ==========================================
-   2. ESEMÉNYKEZELŐK INICIALIZÁLÁSA (DOM READY)
-   ========================================== */
 document.addEventListener("DOMContentLoaded", function() {
 
-/* --- Jogosultság ellenőrzése --- */
 google.script.run
   .withSuccessHandler(function(auth) {
-    
-    // 1. HA JOGOSULT FELHASZNÁLÓ -> DASHBOARD BETÖLTÉSE
     if (auth.authorized) {
       document.getElementById("unauthorizedView")?.classList.add("hidden");
       document.getElementById("dashboardView")?.classList.remove("hidden");
-      loadPayKalDashboard(currentPeriod);
+      loadPayKalDashboard(currentPeriod, currentSelectedProject);
       loadSettings();
       return;
     }
 
-    // 2. HA JOGOSULATLAN VAGY AZONOSÍTATLAN -> FIÓKVÁLTÓ KÁRTYA MEGJELENÍTÉSE
     document.getElementById("dashboardView")?.classList.add("hidden");
     document.getElementById("unauthorizedView")?.classList.remove("hidden");
 
@@ -35,12 +26,9 @@ google.script.run
     const switchBtn = document.getElementById("switchAccountBtn");
 
     if (auth.isUnknown || !auth.email) {
-      // ----------------------------------------------------
-      // A) HA A GOOGLE MÉG EGYÁLTALÁN NEM ADTA ÁT AZ E-MAILT
-      // ----------------------------------------------------
       if (titleEl) {
         titleEl.innerText = "🔑 Azonosítás szükséges";
-        titleEl.style.color = "#1976d2"; // Kék
+        titleEl.style.color = "#1976d2";
       }
       if (emailTextEl) {
         emailTextEl.innerText = "Az alkalmazás használatához azonosítanod kell a Google-fiókodat.";
@@ -51,14 +39,10 @@ google.script.run
       if (switchBtn) {
         switchBtn.innerText = "🔑 Bejelentkezés / Azonosítás";
       }
-
     } else {
-      // ----------------------------------------------------
-      // B) MÁR ISMERJÜK AZ E-MAILT, DE NINCS A TÁBLÁZATBAN!
-      // ----------------------------------------------------
       if (titleEl) {
         titleEl.innerText = "🚫 Hozzáférés megtagadva";
-        titleEl.style.color = "#d32f2f"; // Piros
+        titleEl.style.color = "#d32f2f";
       }
       if (emailTextEl) {
         emailTextEl.innerHTML = "Sajnos a(z) <strong style='color:#d32f2f;'>" + auth.email + "</strong> e-mail cím nem jogosult a felület használatához.";
@@ -71,7 +55,6 @@ google.script.run
       }
     }
 
-    // Gomb hivatkozásának beállítása (biztonságos target="_top")
     if (switchBtn && auth.switchAccountUrl) {
       switchBtn.href = auth.switchAccountUrl;
       switchBtn.target = "_top";
@@ -83,7 +66,6 @@ google.script.run
   })
   .getUserAuth();
 
-  /* --- 2.2 Automatikus mai dátumok beállítása --- */
   try {
     const today = new Date();
     const year = today.getFullYear();
@@ -98,21 +80,19 @@ google.script.run
     console.error(e);
   }
 
-  /* --- 2.3 Vissza gombok a Dashboardra --- */
   document.getElementById("backToDashBtn")?.addEventListener("click", () => { 
     showScreen("dashboardView"); 
-    loadPayKalDashboard(currentPeriod); 
+    loadPayKalDashboard(currentPeriod, currentSelectedProject); 
   });
   document.getElementById("backToDashFromIncomeBtn")?.addEventListener("click", () => { 
     showScreen("dashboardView"); 
-    loadPayKalDashboard(currentPeriod); 
+    loadPayKalDashboard(currentPeriod, currentSelectedProject); 
   });
   document.getElementById("backToDashFromTransferBtn")?.addEventListener("click", () => { 
     showScreen("dashboardView"); 
-    loadPayKalDashboard(currentPeriod); 
+    loadPayKalDashboard(currentPeriod, currentSelectedProject); 
   });
 
-  /* --- 2.4 Befizető Lenyíló Panel Kezelése --- */
   document.getElementById("payerSelectTrigger")?.addEventListener("click", function(e) {
     e.stopPropagation();
     document.getElementById("payersDropdownPanel")?.classList.toggle("hidden");
@@ -137,7 +117,6 @@ google.script.run
     updatePayerBadge();
   });
 
-  /* --- 2.5 Fájl/Blokk Feltöltés Kezelése --- */
   function handleFileSelect(e) {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -179,12 +158,13 @@ google.script.run
     document.getElementById("receiptDialog")?.classList.add("hidden");
   });
 
-  /* --- 2.6 Kiadás Mentése --- */
+  /* Kiadás Mentése */
   document.getElementById("saveButton")?.addEventListener("click", function() {
     const amount = document.getElementById("amount").value;
     const date = document.getElementById("date").value;
     const costCenter = document.getElementById("costCenter").value;
     const paymentMethod = document.getElementById("paymentMethod").value;
+    const extraCategory = document.getElementById("expenseExtraSetting")?.value || "";
     const comment = document.getElementById("comment").value;
 
     if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
@@ -192,7 +172,7 @@ google.script.run
     if (!costCenter) { alert("⚠️ Kérlek válassz költséghelyet!"); return; }
     if (!paymentMethod) { alert("⚠️ Kérlek válassz fizetési módot!"); return; }
 
-    const expense = { date, amount: Number(amount), costCenter, paymentMethod, comment };
+    const expense = { date, amount: Number(amount), costCenter, paymentMethod, extraCategory, comment };
     window.currentExpense = expense;
 
     if (selectedReceipts.length === 0) {
@@ -267,7 +247,7 @@ google.script.run
       .getExpenseId(window.currentExpense.costCenter);
   });
 
-  /* --- 2.7 Bevétel Mentése --- */
+  /* Bevétel Mentése */
   document.getElementById("saveIncomeBtn")?.addEventListener("click", function() {
     const date = document.getElementById("incomeDate").value;
     const amount = document.getElementById("incomeAmount").value;
@@ -334,7 +314,7 @@ google.script.run
           if (statusBox) statusBox.classList.add("hidden");
           resetIncomeForm();
           showScreen("dashboardView");
-          loadPayKalDashboard(currentPeriod);
+          loadPayKalDashboard(currentPeriod, currentSelectedProject);
         }, 1200);
       })
       .withFailureHandler(function(err) {
@@ -348,17 +328,18 @@ google.script.run
       .saveIncome(currentIncomeData);
   });
 
-  /* --- 2.8 Pénzmozgás Mentése --- */
+  /* Pénzmozgás Mentése */
   document.getElementById("saveTransferBtn")?.addEventListener("click", function() {
     const date = document.getElementById("transferDate").value;
     const type = document.getElementById("transferType").value;
     const amount = document.getElementById("transferAmount").value;
+    const project = document.getElementById("transferProject")?.value || "";
     const comment = document.getElementById("transferComment").value;
 
     if (!date) { alert("⚠️ Kérlek add meg a dátumot!"); return; }
     if (!amount || Number(amount) <= 0) { alert("⚠️ Kérlek adj meg egy érvényes összeget!"); return; }
 
-    const transferData = { date, type, amount: Number(amount), comment };
+    const transferData = { date, type, amount: Number(amount), project, comment };
     const saveBtn = document.getElementById("saveTransferBtn");
     const statusBox = document.getElementById("transferStatusProgress");
 
@@ -385,7 +366,7 @@ google.script.run
           }
           resetTransferForm();
           showScreen("dashboardView");
-          loadPayKalDashboard(currentPeriod);
+          loadPayKalDashboard(currentPeriod, currentSelectedProject);
         }, 1200);
       })
       .withFailureHandler(function(err) {
@@ -400,9 +381,6 @@ google.script.run
 
 });
 
- /* ==========================================
-     3. KÉPERNYŐ NAVIGÁCIÓ ÉS DASHBOARD
-     ========================================== */
   function showScreen(screenId) {
     const screens = ["dashboardView", "expenseScreen", "incomeScreen", "transferScreen"];
     screens.forEach(id => {
@@ -414,58 +392,59 @@ google.script.run
     if (target) target.classList.remove("hidden");
   }
 
-  function loadPayKalDashboard(period) {
-    currentPeriod = period;
+  function onProjectFilterChange(selectedVal) {
+    currentSelectedProject = selectedVal;
+    loadPayKalDashboard(currentPeriod, currentSelectedProject);
+  }
+
+  function loadPayKalDashboard(period, selectedProject) {
+    currentPeriod = period || currentPeriod;
+    currentSelectedProject = selectedProject !== undefined ? selectedProject : currentSelectedProject;
+
     google.script.run
       .withSuccessHandler(renderPayKalDashboardUI)
       .withFailureHandler(function(err) {
         console.error("Hiba a Dashboard adatok betöltésekor:", err);
       })
-      .getPayKalDashboardData(period);
+      .getPayKalDashboardData(currentPeriod, currentSelectedProject);
   }
 
- function renderPayKalDashboardUI(data) {
-  // 1. Guard clause a függvény legelején
-  if (!data) return;
+  function renderPayKalDashboardUI(data) {
+    if (!data) return;
 
-  // 2. Csoport ID frissítése
-  if (data.csoportId) {
     const balanceLabel = document.querySelector('.balance-label');
     if (balanceLabel) {
-      balanceLabel.innerText = `${data.csoportId.toUpperCase()} CSOPORT VAGYONA`;
+      if (data.selectedProject && data.selectedProject !== "ALL") {
+        balanceLabel.innerText = `${data.selectedProject} - egyenlege`;
+      } else if (data.csoportId) {
+        balanceLabel.innerText = `${data.csoportId.toUpperCase()} CSOPORT VAGYONA`;
+      }
     }
+
+    document.getElementById('totalBalanceDisplay').innerText = formatHUF(data.totalBalance || 0);
+    document.getElementById('cashBalanceDisplay').innerText = formatHUF(data.cashBalance || 0);
+    document.getElementById('bankBalanceDisplay').innerText = formatHUF(data.bankBalance || 0);
+
+    var total = data.totalBalance || 0;
+    var cashPercent = total > 0 ? Math.round(((data.cashBalance || 0) / total) * 100) : 50;
+
+    document.getElementById('cashBar').style.width = cashPercent + '%';
+    document.getElementById('bankBar').style.width = (100 - cashPercent) + '%';
+
+    renderLineChart(data.labels || [], data.values || []);
   }
 
-  // 3. Egyenlegek kiírása (biztonsági nullish értékekkel)
-  document.getElementById('totalBalanceDisplay').innerText = formatHUF(data.totalBalance || 0);
-  document.getElementById('cashBalanceDisplay').innerText = formatHUF(data.cashBalance || 0);
-  document.getElementById('bankBalanceDisplay').innerText = formatHUF(data.bankBalance || 0);
+  function changeTimeFilter(period, btnElement) {
+    var buttons = document.querySelectorAll('.time-btn');
+    buttons.forEach(function(btn) { btn.classList.remove('active'); });
 
-  // 4. Százalékos sáv
-  var total = data.totalBalance || 0;
-  var cashPercent = total > 0 ? Math.round(((data.cashBalance || 0) / total) * 100) : 50;
+    if (btnElement) {
+      btnElement.classList.add('active');
+    }
 
-  document.getElementById('cashBar').style.width = cashPercent + '%';
-  document.getElementById('bankBar').style.width = (100 - cashPercent) + '%';
-
-  renderLineChart(data.labels || [], data.values || []);
-}
-
-// A HTML-ben a hívás így nézzen ki: onclick="changeTimeFilter('month', this)"
-function changeTimeFilter(period, btnElement) {
-  var buttons = document.querySelectorAll('.time-btn');
-  buttons.forEach(function(btn) { btn.classList.remove('active'); });
-
-  if (btnElement) {
-    btnElement.classList.add('active');
+    loadPayKalDashboard(period, currentSelectedProject);
   }
 
-  loadPayKalDashboard(period);
-}
-
-  /* ==========================================
-     4. DIAGRAM ÉS FORMÁTUM SEGÉDFÜGGVÉNYEK
-     ========================================== */
   function renderLineChart(labels, values) {
     var canvas = document.getElementById('expenseChart');
     if (!canvas) return;
@@ -482,7 +461,7 @@ function changeTimeFilter(period, btnElement) {
       data: {
         labels: labels,
         datasets: [{
-          label: 'Csoport vagyona',
+          label: 'Egyenleg',
           data: values,
           borderColor: '#2563eb',
           borderWidth: 3,
@@ -523,9 +502,6 @@ function changeTimeFilter(period, btnElement) {
     return Number(amount || 0).toLocaleString('hu-HU') + ' Ft';
   }
 
-  /* ==========================================
-     5. BEÁLLÍTÁSOK ÉS MEZŐK BETÖLTÉSE
-     ========================================== */
   function loadSettings() {
     google.script.run
       .withSuccessHandler(function(data) {
@@ -535,6 +511,34 @@ function changeTimeFilter(period, btnElement) {
         fillSelect("paymentMethod", data.paymentMethods, "Válassz fizetési módot");
         fillSelect("incomePaymentMethod", data.incomePaymentMethods, "Válassz módot (Pl. Készpénz / Utalás)");
         fillSelect("incomePurpose", data.incomePurposes, "Válassz célt");
+        fillSelect("expenseExtraSetting", data.settingF, "Válassz kategóriát (Opcionális)");
+
+        // Aktív projektek benépesítése a Készpénzmozgás és Dashboard legördülőkbe
+        if (data.activeProjects) {
+          const transferProjSelect = document.getElementById("transferProject");
+          if (transferProjSelect) {
+            transferProjSelect.innerHTML = '<option value="">-- Nincs projekthez kötve --</option>';
+            data.activeProjects.forEach(p => {
+              const opt = document.createElement("option");
+              opt.value = p.name;
+              opt.textContent = p.name + " (" + p.type + ")";
+              transferProjSelect.appendChild(opt);
+            });
+          }
+
+          const dashProjectSelect = document.getElementById("projectSelect");
+          if (dashProjectSelect) {
+            const currentVal = dashProjectSelect.value;
+            dashProjectSelect.innerHTML = '<option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>';
+            data.activeProjects.forEach(p => {
+              const opt = document.createElement("option");
+              opt.value = p.name;
+              opt.textContent = p.name;
+              dashProjectSelect.appendChild(opt);
+            });
+            if (currentVal) dashProjectSelect.value = currentVal;
+          }
+        }
 
         const payersList = document.getElementById("payersCheckboxList");
         if (payersList && data.payers) {
@@ -580,9 +584,6 @@ function changeTimeFilter(period, btnElement) {
     }
   }
 
-  /* ==========================================
-     6. BLOKK KÉPEK ÉS ELŐNÉZET KEZELÉSE
-     ========================================== */
   function renderReceiptPreviews() {
     const previewContainer = document.getElementById("receiptPreview");
     if (!previewContainer) return;
@@ -651,15 +652,13 @@ function changeTimeFilter(period, btnElement) {
       .uploadExpenseImage(selectedReceipts[index].data, expenseId, index + 1);
   }
 
-  /* ==========================================
-     7. ÖSSZEGZÉS ÉS ŰRLAP ALAPHELYZETBE ÁLLÍTÁS
-     ========================================== */
   function showSummary(expense) {
     document.getElementById("summary").innerHTML = 
       "<p><strong>Dátum:</strong> " + expense.date + "</p>" +
       "<p><strong>Összeg:</strong> " + formatHUF(expense.amount) + "</p>" +
       "<p><strong>Költséghely:</strong> " + expense.costCenter + "</p>" +
       "<p><strong>Fizetési mód:</strong> " + expense.paymentMethod + "</p>" +
+      "<p><strong>Kategória:</strong> " + (expense.extraCategory || "-") + "</p>" +
       "<p><strong>Megjegyzés:</strong> " + (expense.comment || "-") + "</p>" +
       "<p><strong>Csatolt blokkok:</strong> " + selectedReceipts.length + " db</p>";
 
@@ -674,7 +673,7 @@ function changeTimeFilter(period, btnElement) {
     resetConfirmButtons();
     resetExpenseForm();
     showScreen("dashboardView");
-    loadPayKalDashboard(currentPeriod);
+    loadPayKalDashboard(currentPeriod, currentSelectedProject);
   }
 
   function resetConfirmButtons() {
@@ -695,6 +694,7 @@ function changeTimeFilter(period, btnElement) {
     document.getElementById("comment").value = "";
     if (document.getElementById("costCenter")) document.getElementById("costCenter").selectedIndex = 0;
     if (document.getElementById("paymentMethod")) document.getElementById("paymentMethod").selectedIndex = 0;
+    if (document.getElementById("expenseExtraSetting")) document.getElementById("expenseExtraSetting").selectedIndex = 0;
     selectedReceipts = [];
     renderReceiptPreviews();
     const receiptInput = document.getElementById("receipt");
@@ -736,10 +736,9 @@ function changeTimeFilter(period, btnElement) {
     document.getElementById("transferAmount").value = "";
     document.getElementById("transferComment").value = "";
     if (document.getElementById("transferType")) document.getElementById("transferType").selectedIndex = 0;
+    if (document.getElementById("transferProject")) document.getElementById("transferProject").selectedIndex = 0;
   }
 
-
-// Modal megnyitása és betöltés indítása
 function openProjectModal() {
   document.getElementById('projectModal').style.display = 'block';
   loadProjectTypesDropdown();
@@ -750,7 +749,6 @@ function closeProjectModal() {
   document.getElementById('projectModal').style.display = 'none';
 }
 
-// 1. Típusok betöltése (Beállítások E2:E)
 function loadProjectTypesDropdown() {
   const select = document.getElementById('newProjectType');
   select.innerHTML = '<option value="">-- Válassz típust --</option>';
@@ -774,7 +772,6 @@ function loadProjectTypesDropdown() {
     .getProjectTypes();
 }
 
-// 2. Aktív projektek lekérése a Projektek munkalapról
 function loadProjectList() {
   const container = document.getElementById('projectListContainer');
   container.innerHTML = '<p style="color: #64748b; font-size: 16px;">Projektek betöltése...</p>';
@@ -800,18 +797,16 @@ function renderProjectList(projects) {
   
   projects.forEach(function(proj) {
     const projName = proj.nev || proj.name || 'Névtelen';
-    const projType = proj.tipus || 'Nincs típus';
+    const projType = proj.tipus || proj.type || 'Nincs típus';
 
     html += `
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; width: 100%;">
         
-        <!-- Projekt Neve (22px) és Típusa (21px) -->
         <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px;">
           <strong style="color: #0f172a; font-size: 28px; font-weight: 600;">${projName}</strong>
           <span style="color: #64748b; font-style: italic; font-size: 25px; margin-left: 8px;">(${projType})</span>
         </div>
         
-        <!-- Archiválás gomb (18px betűméret) -->
         <button type="button" onclick="handleArchiveProject('${proj.id}')" 
                 style="width: auto !important; min-width: unset !important; max-width: fit-content !important; flex: 0 0 auto !important; padding: 6px 14px !important; font-size: 26px !important; height: auto !important; line-height: 1.2 !important; background: #ffffff !important; color: #dc2626 !important; border: 1px solid #fca5a5 !important; border-radius: 6px !important; cursor: pointer !important; font-weight: 500 !important; margin: 0 !important; text-align: center !important;"
                 onmouseover="this.style.background='#fef2f2'" 
@@ -827,7 +822,6 @@ function renderProjectList(projects) {
   container.innerHTML = html;
 }
 
-// 4. Új projekt mentése
 function handleCreateProject() {
   const nameInput = document.getElementById('newProjectName');
   const typeSelect = document.getElementById('newProjectType');
@@ -845,6 +839,7 @@ function handleCreateProject() {
       nameInput.value = '';
       typeSelect.value = '';
       loadProjectList();
+      loadSettings();
     })
     .withFailureHandler(function(err) {
       alert("Hiba a mentés során: " + err.message);
@@ -852,18 +847,17 @@ function handleCreateProject() {
     .addProject(name, type);
 }
 
-// 5. Projekt archiválása
 function handleArchiveProject(projectId) {
   if (!confirm("Biztosan archiválni szeretnéd ezt a projektet?")) return;
 
   google.script.run
     .withSuccessHandler(function() {
       loadProjectList();
+      loadSettings();
     })
     .withFailureHandler(function(err) {
       alert("Hiba az archiválás során: " + err.message);
     })
     .archiveProject(projectId);
 }
-
 </script>

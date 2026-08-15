@@ -1,68 +1,80 @@
 /**
  * Service.Projects.gs
- * Dinamikus projektek és fix kategóriák kezelése
+ * Dinamikus projektek és beállítások kezelése
  */
 
-/**
- * Legördülő menü elemeinek lekérése az űrlapokhoz (Bevétel / Kiadás)
- * @param {string} formType - 'income' vagy 'expense'
- */
-function getCategoriesForForm(formType) {
+function getSettingsData() {
   const auth = getUserAuth();
   if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
 
   const csoportId = String(auth.csoportId || "").trim();
   const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
 
-  // 1. FIX ELEMEK BEOLVASÁSA A 'Beállítások' LAPRÓL
-  const settingsSheet = ss.getSheetByName("Beállítások");
-  let fixedCategories = [];
+  let costCentersBase = [];
+  let paymentMethods = [];
+  let incomePurposesBase = [];
+  let incomePaymentMethods = [];
+  let settingF = [];
 
+  // Beállítások munkalap
+  const settingsSheet = ss.getSheetByName(APP.SHEETS.SETTINGS);
   if (settingsSheet && settingsSheet.getLastRow() >= 2) {
-    // Kiadás: A oszlop (1), Bevétel: C oszlop (3)
-    const colIndex = (formType === 'income') ? 3 : 1; 
-    const rawData = settingsSheet.getRange(2, colIndex, settingsSheet.getLastRow() - 1, 1).getValues();
+    const lastRow = settingsSheet.getLastRow();
+    const data = settingsSheet.getRange(2, 1, lastRow - 1, 6).getValues();
 
-    fixedCategories = rawData
-      .map(row => String(row[0]).trim())
-      .filter(val => val !== "" && val.toLowerCase() !== "egyéb");
+    data.forEach(row => {
+      if (row[0]) costCentersBase.push(String(row[0]).trim()); // A2:A
+      if (row[1]) paymentMethods.push(String(row[1]).trim());  // B2:B
+      if (row[2]) incomePurposesBase.push(String(row[2]).trim());// C2:C
+      if (row[3]) incomePaymentMethods.push(String(row[3]).trim());// D2:D
+      if (row[5]) settingF.push(String(row[5]).trim());        // F2:F
+    });
   }
 
-  // 2. DINAMIKUS PROJEKTEK BEOLVASÁSA A 'Projektek' LAPRÓL
-  const projectSheet = ss.getSheetByName("Projektek");
-  let dynamicProjects = [];
-
-  if (projectSheet && projectSheet.getLastRow() >= 2) {
-    const data = projectSheet.getRange(2, 1, projectSheet.getLastRow() - 1, 5).getValues();
-
-    for (let i = 0; i < data.length; i++) {
-      const rowCsoport = String(data[i][0]).trim();
-      const projektNeve = String(data[i][2]).trim();
-      const aktiv = data[i][4];
-
-      if (rowCsoport === csoportId && (aktiv === true || String(aktiv).toUpperCase() === 'TRUE')) {
-        if (projektNeve && projektNeve.toLowerCase() !== "egyéb") {
-          dynamicProjects.push(projektNeve);
-        }
+  // KM Tagok
+  let payers = [];
+  const membersSheet = ss.getSheetByName(APP.SHEETS.MEMBERS);
+  if (membersSheet && membersSheet.getLastRow() >= 2) {
+    const mData = membersSheet.getRange(2, 1, membersSheet.getLastRow() - 1, 2).getValues();
+    mData.forEach(row => {
+      if (String(row[0]).trim() === csoportId && row[1]) {
+        payers.push(String(row[1]).trim());
       }
-    }
+    });
   }
 
-  // 3. SZIGORÚ SORREND: Fix elemek -> Dinamikus projektek -> "Egyéb" (mint utolsó)
-  return [...fixedCategories, ...dynamicProjects, "Egyéb"];
+  // Aktív projektek kinyerése
+  const activeProjects = getActiveProjectsData(csoportId, ss);
+  const activeProjectNames = activeProjects.map(p => p.name);
+
+  // 1. Kiadások: Beállítások A2:A + Aktív projektek + "Egyéb kiadások"
+  const costCenters = [
+    ...costCentersBase.filter(item => item.toLowerCase() !== "egyéb" && item.toLowerCase() !== "egyéb kiadások"),
+    ...activeProjectNames,
+    "Egyéb kiadások"
+  ];
+
+  // 2. Bevételek: Beállítások C2:C + Aktív projektek + "Egyéb bevételek"
+  const incomePurposes = [
+    ...incomePurposesBase.filter(item => item.toLowerCase() !== "egyéb" && item.toLowerCase() !== "egyéb bevételek"),
+    ...activeProjectNames,
+    "Egyéb bevételek"
+  ];
+
+  return {
+    costCenters: costCenters,
+    paymentMethods: paymentMethods,
+    incomePurposes: incomePurposes,
+    incomePaymentMethods: incomePaymentMethods,
+    payers: payers,
+    settingF: settingF,
+    activeProjects: activeProjects
+  };
 }
 
-/**
- * A 'Projektek kezelése' felugró ablakhoz tartozó aktív projektek listája
- */
-function getActiveProjects() {
-  const auth = getUserAuth();
-  if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
-
-  const csoportId = String(auth.csoportId || "").trim();
-  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+function getActiveProjectsData(csoportId, ssInstance) {
+  const ss = ssInstance || SpreadsheetApp.openById(CONFIG.SHEET_ID);
   const sheet = ss.getSheetByName("Projektek");
-
   if (!sheet || sheet.getLastRow() < 2) return [];
 
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
@@ -75,77 +87,74 @@ function getActiveProjects() {
     const tipus = String(data[i][3]).trim();
     const aktiv = data[i][4];
 
-    if (rowCsoport === csoportId && (aktiv === true || String(aktiv).toUpperCase() === 'TRUE')) {
-      projects.push({ id: projektId, nev: projektNeve, name: projektNeve, tipus: tipus });
+    if (rowCsoport === String(csoportId).trim() && (aktiv === true || String(aktiv).toUpperCase() === 'TRUE')) {
+      if (projektNeve) {
+        projects.push({
+          id: projektId,
+          name: projektNeve,
+          type: tipus
+        });
+      }
     }
   }
-
   return projects;
 }
 
-/**
- * Új projekt rögzítése
- */
-function addProject(projektNeve, tipus) {
+function getProjectTypes() {
+  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+  const settingsSheet = ss.getSheetByName(APP.SHEETS.SETTINGS);
+  if (!settingsSheet || settingsSheet.getLastRow() < 2) return [];
+  
+  const values = settingsSheet.getRange(2, 5, settingsSheet.getLastRow() - 1, 1).getValues(); // E oszlop
+  return values.map(row => String(row[0]).trim()).filter(Boolean);
+}
+
+function getActiveProjects() {
+  const auth = getUserAuth();
+  if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
+  return getActiveProjectsData(auth.csoportId);
+}
+
+function addProject(name, type) {
   const auth = getUserAuth();
   if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
 
-  const csoportId = String(auth.csoportId || "").trim();
-  if (!projektNeve || !tipus) throw new Error("Minden mező kitöltése kötelező!");
-
   const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
   let sheet = ss.getSheetByName("Projektek");
-
   if (!sheet) {
     sheet = ss.insertSheet("Projektek");
-    sheet.appendRow(["Csoport_ID", "Projekt_ID", "Projekt_Neve", "Tipus", "Aktiv"]);
+    sheet.appendRow(["Csoport_ID", "Projekt_ID", "Projekt_Neve", "Projekt_Típusa", "Aktív"]);
   }
 
-  const projektId = "PRJ-" + Utilities.getUuid().substring(0, 8);
-  sheet.appendRow([csoportId, projektId, projektNeve.trim(), tipus.trim(), true]);
+  const now = new Date();
+  const timeStamp = Utilities.formatDate(now, APP.TIMEZONE, "yyyyMMdd");
+  const projectId = "PRJ-" + timeStamp + "-" + Math.floor(Math.random() * 1000);
+
+  sheet.appendRow([
+    auth.csoportId,
+    projectId,
+    name,
+    type,
+    true
+  ]);
 
   return { success: true };
 }
 
-/**
- * Projekt archiválása
- */
-function archiveProject(projektId) {
+function archiveProject(projectId) {
   const auth = getUserAuth();
   if (!auth.authorized) throw new Error("Jogosulatlan hozzáférés!");
 
-  const csoportId = String(auth.csoportId || "").trim();
   const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
   const sheet = ss.getSheetByName("Projektek");
+  if (!sheet || sheet.getLastRow() < 2) return;
 
-  if (!sheet || sheet.getLastRow() < 2) throw new Error("Nincs megnevezett projekt!");
-
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
-
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
   for (let i = 0; i < data.length; i++) {
-    if (String(data[i][0]).trim() === csoportId && String(data[i][1]).trim() === projektId) {
+    if (String(data[i][0]).trim() === String(auth.csoportId).trim() && String(data[i][1]).trim() === String(projectId).trim()) {
       sheet.getRange(i + 2, 5).setValue(false);
-      return { success: true };
+      break;
     }
   }
-
-  throw new Error("A projekt nem található!");
-}
-
-/**
- * Projekt típusok lekérése a Beállítások munkalap E2:E oszlopából
- */
-function getProjectTypes() {
-  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
-  const sheet = ss.getSheetByName("Beállítások");
-  if (!sheet) return [];
-  
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  
-  const values = sheet.getRange("E2:E" + lastRow).getValues();
-  // Üres és duplikált elemek kiszűrése
-  return values
-    .map(row => row[0])
-    .filter(val => val && val.toString().trim() !== "");
+  return { success: true };
 }

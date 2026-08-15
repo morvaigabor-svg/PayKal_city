@@ -1,5 +1,5 @@
 /* ==========================================
-   1. KIADÁS MENTÉSE (Csoport_ID az A oszlopban)
+   1. KIADÁS MENTÉSE (L, M, N oszlop bővítéssel)
    ========================================== */
 function saveExpenseData(expense, imageUrls = [], customId = null, gpsCoords = null) {
   try {
@@ -10,23 +10,35 @@ function saveExpenseData(expense, imageUrls = [], customId = null, gpsCoords = n
     const sheet = ss.getSheetByName(APP.SHEETS.EXPENSES);
     const id = customId || generateExpenseId(expense.costCenter);
 
+    // Projekt attribútumok keresése
+    let projectType = "";
+    let projectId = "";
+    const activeProjects = getActiveProjectsData(auth.csoportId, ss);
+    const matchedProj = activeProjects.find(p => p.name === expense.costCenter);
+    if (matchedProj) {
+      projectType = matchedProj.type;
+      projectId = matchedProj.id;
+    }
+
     sheet.appendRow([
-      auth.csoportId,        // A oszlop: Csoport_ID
-      expense.date,          // B oszlop: Dátum
-      expense.costCenter,    // C oszlop: Költséghely
-      expense.amount,        // D oszlop: Összeg
-      expense.paymentMethod, // E oszlop: Fizetési mód
-      "",                    // F oszlop: Blokk link
-      expense.comment,       // G oszlop: Megjegyzés
-      auth.email,            // H oszlop: Beküldő email
-      "",                    // I oszlop: GPS
-      new Date(),            // J oszlop: Feltöltés ideje
-      id                     // K oszlop: Egyedi azonosító
+      auth.csoportId,           // A: Csoport_ID
+      expense.date,             // B: Dátum
+      expense.costCenter,       // C: Költséghely
+      expense.amount,           // D: Összeg
+      expense.paymentMethod,    // E: Fizetési mód
+      "",                       // F: Blokk link
+      expense.comment,          // G: Megjegyzés
+      auth.email,               // H: Beküldő email
+      "",                       // I: GPS
+      new Date(),               // J: Feltöltés ideje
+      id,                       // K: Egyedi azonosító
+      projectType,              // L: Projekt típusa
+      projectId,                // M: Projekt_ID
+      expense.extraCategory || "" // N: Beállítások F2:F érték
     ]);
 
     const lastRow = sheet.getLastRow();
 
-    // Blokk linkek beszúrása (F oszlop = 6. oszlop)
     if (imageUrls && imageUrls.length > 0) {
       let labels = imageUrls.map((_, i) => String(i + 1));
       let fullText = labels.join(" | "); 
@@ -44,7 +56,6 @@ function saveExpenseData(expense, imageUrls = [], customId = null, gpsCoords = n
       sheet.getRange(lastRow, 6).setRichTextValue(richTextBuilder.build());
     }
 
-    // GPS link beszúrása (I oszlop = 9. oszlop)
     if (gpsCoords && gpsCoords.lat && gpsCoords.lng) {
       const mapUrl = "https://maps.google.com/?q=" + gpsCoords.lat + "," + gpsCoords.lng;
       const gpsRichText = SpreadsheetApp.newRichTextValue().setText("📍 Térkép").setLinkUrl(mapUrl).build();
@@ -60,8 +71,15 @@ function saveExpenseData(expense, imageUrls = [], customId = null, gpsCoords = n
   }
 }
 
+function generateExpenseId(costCenter) {
+  const now = new Date();
+  const timeStamp = Utilities.formatDate(now, APP.TIMEZONE, "yyyyMMdd");
+  const randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return "EXP-" + timeStamp + "-" + randomSuffix;
+}
+
 /* ==========================================
-   2. BEVÉTEL MENTÉSE (Csoport_ID az A oszlopban)
+   2. BEVÉTEL MENTÉSE (K és L oszlop bővítéssel)
    ========================================== */
 function saveIncomeData(incomeData) {
   try {
@@ -70,6 +88,18 @@ function saveIncomeData(incomeData) {
 
     const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     const sheet = ss.getSheetByName(APP.SHEETS.INCOME);
+
+    // Projekt attribútumok kikeresése a cél (projekt neve) alapján
+    let projectType = "";
+    let projectId = "";
+    if (incomeData.purpose) {
+      const activeProjects = getActiveProjectsData(auth.csoportId, ss);
+      const matchedProj = activeProjects.find(p => p.name === incomeData.purpose);
+      if (matchedProj) {
+        projectType = matchedProj.type;
+        projectId = matchedProj.id;
+      }
+    }
 
     const now = new Date();
     const timeStamp = Utilities.formatDate(now, APP.TIMEZONE, "yyyyMMdd");
@@ -92,12 +122,14 @@ function saveIncomeData(incomeData) {
         incomeData.comment || "", // G: Megjegyzés
         id,                       // H: Egyedi azonosító
         auth.email,               // I: Rögzítő Email
-        now                       // J: Rögzítés ideje
+        now,                      // J: Rögzítés ideje
+        projectType,              // K: Projekt típusa
+        projectId                 // L: Projekt ID
       ]);
     });
 
     if (rowsToAppend.length > 0) {
-      sheet.getRange(lastRow + 1, 1, rowsToAppend.length, 10).setValues(rowsToAppend);
+      sheet.getRange(lastRow + 1, 1, rowsToAppend.length, 12).setValues(rowsToAppend);
     }
 
     writeLog("INFO", "Income", "Bevétel rögzítve: " + ids.join(", "));
@@ -110,7 +142,7 @@ function saveIncomeData(incomeData) {
 }
 
 /* ==========================================
-   3. PÉNZMOZGÁS MENTÉSE (Csoport_ID az A oszlopban)
+   3. PÉNZMOZGÁS MENTÉSE (I, J, K oszlop bővítéssel)
    ========================================== */
 function saveTransferData(transferData) {
   try {
@@ -120,20 +152,35 @@ function saveTransferData(transferData) {
     const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     const sheet = ss.getSheetByName(APP.SHEETS.TRANSFERS);
 
+    // Projekt attribútumok kikeresése (ha van kiválasztva projekt)
+    let projectType = "";
+    let projectId = "";
+    if (transferData.project) {
+      const activeProjects = getActiveProjectsData(auth.csoportId, ss);
+      const matchedProj = activeProjects.find(p => p.name === transferData.project);
+      if (matchedProj) {
+        projectType = matchedProj.type;
+        projectId = matchedProj.id;
+      }
+    }
+
     const now = new Date();
     const timeStamp = Utilities.formatDate(now, APP.TIMEZONE, "yyyyMMdd");
     const seq = String(sheet.getLastRow()).padStart(3, "0");
     const transferId = "TRF-" + timeStamp + "-" + seq;
 
     sheet.appendRow([
-      auth.csoportId,           // A: Csoport_ID
-      transferData.date,        // B: Dátum
-      transferData.type,        // C: Pénzmozgás típusa
+      auth.csoportId,             // A: Csoport_ID
+      transferData.date,          // B: Dátum
+      transferData.type,          // C: Pénzmozgás típusa
       Number(transferData.amount),// D: Összeg
-      transferData.comment || "",// E: Megjegyzés
-      transferId,               // F: Egyedi azonosító
-      auth.email,               // G: Rögzítő Email
-      now                       // H: Rögzítés ideje
+      transferData.comment || "", // E: Megjegyzés
+      transferId,                 // F: Egyedi azonosító
+      auth.email,                 // G: Rögzítő Email
+      now,                        // H: Rögzítés ideje
+      transferData.project || "", // I: Projekt neve
+      projectType,                // J: Projekt típusa
+      projectId                   // K: Projekt ID
     ]);
 
     writeLog("INFO", "Transfer", "Pénzmozgás rögzítve: " + transferId);

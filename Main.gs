@@ -16,25 +16,20 @@ function include(filename) {
 /**
  * Felhasználó azonosítása és jogosultság ellenőrzése
  */
-/**
- * Felhasználó azonosítása és jogosultság ellenőrzése
- */
 function getUserAuth() {
   try {
     const activeEmail = Session.getActiveUser().getEmail();
     const scriptUrl = ScriptApp.getService().getUrl();
     const switchUrl = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl);
 
-    // 1. HA ELSŐ BELÉPÉS (A Google még nem adta át az e-mailt)
     if (!activeEmail || activeEmail.trim() === "") {
       return {
         authorized: false,
-        needsAuth: true, // JELZÉS: Automatikus átirányítás szükséges!
+        needsAuth: true,
         switchAccountUrl: switchUrl
       };
     }
 
-    // 2. 'Felhasználók' lap ellenőrzése
     const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     const usersSheet = ss.getSheetByName(APP.SHEETS.USERS);
     
@@ -56,7 +51,6 @@ function getUserAuth() {
       }
     }
 
-    // 3. HA BENNE VAN A TÁBLÁZATBAN ➔ BEENGETJÜK!
     if (isAuthorized) {
       return {
         authorized: true,
@@ -65,7 +59,6 @@ function getUserAuth() {
       };
     }
 
-    // 4. HA ISMERT AZ E-MAIL, DE NINCS A TÁBLÁZATBAN ➔ LETILTÓ KÁRTYA!
     return {
       authorized: false,
       needsAuth: false,
@@ -90,4 +83,4 @@ function getExpenseId(costCenter) { return generateExpenseId(costCenter); }
 function saveExpense(expense, imageUrls, expenseId, gpsCoords) { return saveExpenseData(expense, imageUrls, expenseId, gpsCoords); }
 function saveIncome(incomeData) { return saveIncomeData(incomeData); }
 function saveTransfer(transferData) { return saveTransferData(transferData); }
-function getPayKalDashboardData(timeFilter) { return getPayKalDashboardDataImpl(timeFilter); }
+function getPayKalDashboardData(timeFilter, selectedProject) { return getPayKalDashboardDataImpl(timeFilter, selectedProject); }
