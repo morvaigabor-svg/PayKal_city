@@ -47,7 +47,7 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject, targetCsoportId
     let cityTotalBank = 0;
     let cityTotal = 0;
 
-    const groupBalances = {}; // { KMCS101: { cash: X, bank: Y, total: Z } }
+    const groupBalances = {};
     cityGroupIds.forEach(id => { groupBalances[id] = { cash: 0, bank: 0, total: 0 }; });
 
     const balanceSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.BALANCE) ? APP.SHEETS.BALANCE : "Egyenleg";
@@ -83,17 +83,22 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject, targetCsoportId
 
     return {
       viewType: "CITY_SUMMARY",
+      csoportId: activeTarget || "",
+      selectedProject: "ALL",
       displayTitle: `${userCity.toUpperCase()} - ÖSSZVAGYON`,
       totalBalance: cityTotal,
       cashBalance: cityTotalCash,
       bankBalance: cityTotalBank,
-      chartType: "BAR", // Frontend sávdiagram jelző
+      chartType: "BAR",
       barData: {
         labels: barLabels,
         cash: barCashData,
         bank: barBankData
       },
-      readOnly: true // Gombok elrejtése
+      projects: [],
+      labels: [],
+      values: [],
+      readOnly: true
     };
   }
 
@@ -212,6 +217,16 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject, targetCsoportId
 
   const isOwnGroup = (activeTarget === auth.csoportId);
 
+  // Kijelölt csoport (activeTarget) aktív projektjeinek kinyerése
+  let groupProjects = [];
+  try {
+    if (typeof getActiveProjectsData === "function") {
+      groupProjects = getActiveProjectsData(activeTarget, ss);
+    }
+  } catch (e) {
+    groupProjects = [];
+  }
+
   return {
     viewType: activeViewType,
     csoportId: activeTarget,
@@ -223,7 +238,8 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject, targetCsoportId
     chartType: "LINE",
     labels: labels,
     values: values,
-    readOnly: !isOwnGroup // Csak a saját vezetői csoportjában aktívak a gombok!
+    projects: groupProjects || [],
+    readOnly: !isOwnGroup
   };
 }
 

@@ -131,8 +131,10 @@ function updateProjectDropdownOptions(projects, selectedProject) {
   if (Array.isArray(projects) && projects.length > 0) {
     projects.forEach(proj => {
       const option = document.createElement("option");
-      option.value = proj.id || proj.name || proj;
-      option.textContent = proj.name || proj;
+      const val = (typeof proj === "object" && proj !== null) ? (proj.name || proj.id) : proj;
+      const text = (typeof proj === "object" && proj !== null) ? (proj.name || proj.id) : proj;
+      option.value = val;
+      option.textContent = text;
       projSelect.appendChild(option);
     });
   }
@@ -651,22 +653,9 @@ function loadSettings() {
       fillSelect("expenseExtraSetting", data.settingF, "Válassz kategóriát (Opcionális)");
       fillSelect("newProjectType", data.projectTypes, "Válassz típust...");
 
-      // Csatolt projektek frissítése a szűrőben
+// Csatolt projektek frissítése a pénzmozgás rögzítőben
       if (data.activeProjects) {
-        const dashProjectSelect = document.getElementById("projectSelect");
         const transferProjectSelect = document.getElementById("transferProject");
-
-        if (dashProjectSelect) {
-          const currentVal = dashProjectSelect.value;
-          dashProjectSelect.innerHTML = '<option value="ALL">-- Teljes csoportvagyon (Összvagyon) --</option>';
-          data.activeProjects.forEach(p => {
-            const opt = document.createElement("option");
-            opt.value = p.name;
-            opt.textContent = p.name;
-            dashProjectSelect.appendChild(opt);
-          });
-          if (currentVal) dashProjectSelect.value = currentVal;
-        }
 
         if (transferProjectSelect) {
           transferProjectSelect.innerHTML = '<option value="" selected>-- Nincs projekthez kötve --</option>';
