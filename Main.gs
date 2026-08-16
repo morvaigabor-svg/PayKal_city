@@ -1,12 +1,16 @@
 /**
  * Web App belépési pont
  */
-function doGet() {
+/**
+ * Web App belépési pont - Mobilbarát és fiókkonfliktus-védett
+ */
+function doGet(e) {
   return HtmlService
     .createTemplateFromFile("index")
     .evaluate()
     .setTitle(APP.NAME)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function include(filename) {
@@ -16,109 +20,114 @@ function include(filename) {
 /**
  * Felhasználó azonosítása és pontos koordinátori jogosultságok felépítése
  */
+/**
+ * 1 db összefogó inicializálás az azonnali induláshoz
+ */
+function getInitialAppState() {
+  const auth = getUserAuth();
+  if (!auth.authorized) {
+    return { auth: auth };
+  }
+
+  const settings = getSettingsData();
+  const dashboard = getPayKalDashboardDataImpl("1H", "ALL", auth.csoportId, "LEADERSHIP_GROUP");
+
+  return {
+    auth: auth,
+    settings: settings,
+    dashboard: dashboard
+  };
+}
+
+/**
+ * Felhasználó azonosítása (Mobilos fiókváltási hiba kivédésével)
+ */
 function getUserAuth() {
   try {
-    const activeEmail = Session.getActiveUser().getEmail();
+    let activeEmail = "";
+    try { activeEmail = Session.getActiveUser().getEmail(); } catch (e) {}
+    if (!activeEmail) {
+      try { activeEmail = Session.getEffectiveUser().getEmail(); } catch (e) {}
+    }
+
     const scriptUrl = ScriptApp.getService().getUrl();
     const switchUrl = "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl);
 
-    if (!activeEmail || activeEmail.trim() === "") {
-      return { authorized: false, needsAuth: true, switchAccountUrl: switchUrl };
-    }
-
     const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
-    const usersSheet = ss.getSheetByName(APP.SHEETS.USERS);
-    
-    let isAuthorized = false;
-    let userGroup = null; // C oszlop: csoport_ID
-    let userRole = null;  // D oszlop: SZEREPKOR (VEZETO / KOORDINATOR)
-    let userName = null;  // B oszlop: Név
+    const usersSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.USERS) ? APP.SHEETS.USERS : "Felhasználók";
+    const usersSheet = ss.getSheetByName(usersSheetName);
 
-    if (usersSheet && usersSheet.getLastRow() >= 2) {
-      const usersData = usersSheet.getRange(2, 1, usersSheet.getLastRow() - 1, 4).getValues();
-      for (let i = 0; i < usersData.length; i++) {
-        const sheetEmail = String(usersData[i][0]).trim().toLowerCase();
-        if (sheetEmail === activeEmail.trim().toLowerCase()) {
-          isAuthorized = true;
-          userName = String(usersData[i][1] || "").trim();
-          userGroup = String(usersData[i][2] || "").trim();
-          userRole = String(usersData[i][3] || "").trim();
-          break;
-        }
-      }
+    if (!usersSheet || usersSheet.getLastRow() < 2) {
+      throw new Error("A 'Felhasználók' munkalap nem található vagy üres!");
     }
 
-    if (!isAuthorized) {
-      return { authorized: false, needsAuth: false, email: activeEmail, switchAccountUrl: switchUrl };
+    const usersData = usersSheet.getRange(2, 1, usersSheet.getLastRow() - 1, 4).getValues();
+    const cleanEmail = String(activeEmail || "").trim().toLowerCase();
+
+    // 1. Keresés az email alapján
+    let matchedRow = null;
+    if (cleanEmail !== "") {
+      matchedRow = usersData.find(row => String(row[0] || "").trim().toLowerCase() === cleanEmail);
     }
 
-    const isCoordinator = (userRole.toUpperCase() === "KOORDINATOR" || userRole.toLowerCase().includes("koordiná"));
+    // 2. Ha az email nincs a munkalapon (vagy a Google elrejtette a domainen kívüli cimet)
+    if (!matchedRow) {
+      return {
+        authorized: false,
+        needsAuth: false,
+        email: cleanEmail || "Külső / Nem azonosított fiók",
+        switchAccountUrl: switchUrl,
+        message: cleanEmail 
+          ? "A(z) " + cleanEmail + " email cím nincs engedélyezve a rendszernyilvántartásban." 
+          : "A Google nem adta át a fiókadatokat (Domainen kívüli fiók), vagy a fiók nincs regisztrálva."
+      };
+    }
 
-    // Csoportok és városok feltérképezése a Csoportok munkalapról
-    const groupsSheetName = (typeof APP !== 'undefined' && APP.SHEETS && APP.SHEETS.GROUPS) ? APP.SHEETS.GROUPS : "Csoportok";
-    const groupsSheet = ss.getSheetByName(groupsSheetName);
-    
-    let userCity = "";
-    const cityGroups = []; // A koordinátor városához tartozó csoportok listája
+    const finalEmail = String(matchedRow[0] || "").trim();
+    const userName = String(matchedRow[1] || "").trim();
+    const userGroup = String(matchedRow[2] || "").trim() || "KMCS101";
+    const userRole = String(matchedRow[3] || "").trim() || "VEZETO";
+
+    const normalizedRole = userRole.toUpperCase().replace(/Á/g, "A").replace(/É/g, "E");
+    const isCoordinator = normalizedRole.includes("KOORDIN");
+
+    // Város és csoportok feltérképezése
+    const groupsSheet = ss.getSheetByName("Csoportok");
+    let userCity = "Budapest";
+    const cityGroups = [];
 
     if (groupsSheet && groupsSheet.getLastRow() >= 2) {
       const groupsData = groupsSheet.getRange(2, 1, groupsSheet.getLastRow() - 1, 2).getValues();
       const groupToCityMap = {};
-
       groupsData.forEach(row => {
         const gId = String(row[0] || "").trim();
         const gCity = String(row[1] || "").trim();
         if (gId) groupToCityMap[gId] = gCity;
       });
-
-      // Koordinátor városának meghatározása a saját csoport_ID-ja alapján
-      if (userGroup && groupToCityMap[userGroup]) {
-        userCity = groupToCityMap[userGroup];
-      }
-
-      // Városhoz tartozó csoportok kigyűjtése
+      if (userGroup && groupToCityMap[userGroup]) userCity = groupToCityMap[userGroup];
       if (userCity) {
         Object.keys(groupToCityMap).forEach(gId => {
-          if (groupToCityMap[gId].toLowerCase() === userCity.toLowerCase()) {
-            cityGroups.push(gId);
-          }
+          if (groupToCityMap[gId].toLowerCase() === userCity.toLowerCase()) cityGroups.push(gId);
         });
       }
     }
 
     let coordinatorOptions = [];
     if (isCoordinator) {
-      // 1. Saját vezetői csoport (Alapértelmezett)
-      coordinatorOptions.push({
-        id: userGroup,
-        viewType: "LEADERSHIP_GROUP",
-        name: "👑 Saját vezetői csoport (" + userGroup + ")"
-      });
-
-      // 2. Városi összesítő nézet
+      coordinatorOptions.push({ id: userGroup, viewType: "LEADERSHIP_GROUP", name: "👑 Saját vezetői csoport (" + userGroup + ")" });
       if (userCity) {
-        coordinatorOptions.push({
-          id: "CITY_SUMMARY",
-          viewType: "CITY_SUMMARY",
-          name: "📊 " + userCity + " - Városi összesítő nézet"
-        });
+        coordinatorOptions.push({ id: "CITY_SUMMARY", viewType: "CITY_SUMMARY", name: "📊 " + userCity + " - Városi összesítő nézet" });
       }
-
-      // 3. Városi egyes csoportok nézetei (a saját vezetői csoporton kívüliek)
       cityGroups.forEach(gId => {
         if (gId !== userGroup) {
-          coordinatorOptions.push({
-            id: gId,
-            viewType: "GROUP_READONLY",
-            name: "📁 " + gId + " (Csoportnézet)"
-          });
+          coordinatorOptions.push({ id: gId, viewType: "GROUP_READONLY", name: "📁 " + gId + " (Csoportnézet)" });
         }
       });
     }
 
     return {
       authorized: true,
-      email: activeEmail,
+      email: finalEmail,
       name: userName,
       csoportId: userGroup,
       role: userRole,
@@ -133,7 +142,8 @@ function getUserAuth() {
       authorized: false,
       needsAuth: false,
       email: "Azonosítási hiba történt",
-      switchAccountUrl: "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl)
+      switchAccountUrl: "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl),
+      message: "Rendszerhiba történt a bejelentkezés során."
     };
   }
 }

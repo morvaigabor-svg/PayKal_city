@@ -1141,7 +1141,7 @@ function handleCloseProject(projectName) {
 function fallbackAuthInit() {
   google.script.run
     .withSuccessHandler(function(auth) {
-      if (auth.authorized) {
+      if (auth && auth.authorized) {
         currentAuth = auth;
         document.getElementById("unauthorizedView")?.classList.add("hidden");
         document.getElementById("dashboardView")?.classList.remove("hidden");
@@ -1173,11 +1173,16 @@ function fallbackAuthInit() {
         return;
       }
 
+      // Ha nincs jogosultság, átadjuk a választ az UI kezelőnek
       handleUnauthorizedUI(auth);
     })
     .withFailureHandler(function(err) {
       console.error("Autentikációs hiba:", err);
-      handleUnauthorizedUI(null);
+      handleUnauthorizedUI({
+        authorized: false,
+        email: "Szerver hiba",
+        message: "Nem sikerült a kapcsolat a szerverrel."
+      });
     })
     .getUserAuth();
 }
@@ -1191,21 +1196,36 @@ function handleUnauthorizedUI(auth) {
   const subTextEl = document.getElementById("unauthorizedSubText");
   const switchBtn = document.getElementById("switchAccountBtn");
 
-  if (!auth || auth.isUnknown || !auth.email) {
-    if (titleEl) { titleEl.innerText = "🔑 Azonosítás szükséges"; titleEl.style.color = "#1976d2"; }
-    if (emailTextEl) emailTextEl.innerText = "Az alkalmazás használatához azonosítanod kell a Google-fiókodat.";
-    if (subTextEl) subTextEl.innerText = "Kattints az alábbi gombra a belépéshez!";
-    if (switchBtn) switchBtn.innerText = "🔑 Bejelentkezés / Azonosítás";
-  } else {
-    if (titleEl) { titleEl.innerText = "🚫 Hozzáférés megtagadva"; titleEl.style.color = "#d32f2f"; }
-    if (emailTextEl) emailTextEl.innerHTML = "Sajnos a(z) <strong style='color:#d32f2f;'>" + auth.email + "</strong> e-mail cím nem jogosult a felület használatához.";
-    if (subTextEl) subTextEl.innerText = "Ha van engedélyezett fiókod, kérjük válts át rá, vagy kérj hozzáférést az adminisztrátortól!";
-    if (switchBtn) switchBtn.innerText = "🔄 Fiók váltása másik címre";
+  const defaultSwitchUrl = "https://accounts.google.com/AccountChooser";
+  const targetUrl = (auth && auth.switchAccountUrl) ? auth.switchAccountUrl : defaultSwitchUrl;
+  const userEmail = (auth && auth.email) ? auth.email : "";
+
+  if (titleEl) {
+    titleEl.innerText = "🚫 Hozzáférés megtagadva";
+    titleEl.style.color = "#d32f2f";
   }
 
-  if (switchBtn && auth && auth.switchAccountUrl) {
-    switchBtn.href = auth.switchAccountUrl;
-    switchBtn.target = "_top";
+  if (emailTextEl) {
+    if (userEmail && !userEmail.includes("Szerver hiba") && !userEmail.includes("Ismeretlen")) {
+      emailTextEl.innerHTML = "A(z) <strong style='color:#d32f2f;'>" + userEmail + "</strong> e-mail cím nem szerepel a regisztrált 'Felhasználók' listáján.";
+    } else {
+      emailTextEl.innerHTML = "A használt Google-fiók nem azonosítható vagy nincs engedélyezve.";
+    }
+  }
+
+  if (subTextEl) {
+    if (auth && auth.message) {
+      subTextEl.innerText = auth.message + " Kérjük, válts át arra a Google-fiókra, amellyel regisztráltál!";
+    } else {
+      subTextEl.innerText = "Kattints az alábbi gombra, válassz ki egy engedélyezett Google-fiókot, majd próbáld újra!";
+    }
+  }
+
+  if (switchBtn) {
+    switchBtn.innerText = "🔄 Google Fiók Váltása";
+    switchBtn.href = targetUrl;
+    switchBtn.target = "_top"; // Fontos: kikényszeríti az iframe-ből való kilépést a Google fiókváltóra
+    switchBtn.style.display = "inline-block";
   }
 }
 
