@@ -135,19 +135,17 @@ function getPayKalDashboardDataImpl(timeFilter, selectedProject, targetCsoportId
   let projTotalDelta = 0;
 
   if (calcSheet && calcSheet.getLastRow() >= 2) {
-    // 15 oszlop lekérése (A-tól O-ig)
-    const calcData = calcSheet.getRange(2, 1, calcSheet.getLastRow() - 1, 15).getValues();
+    const calcData = calcSheet.getRange(2, 1, calcSheet.getLastRow() - 1, 11).getValues();
     
     for (let i = 0; i < calcData.length; i++) {
-      const rowCsoport = String(calcData[i][0] || "").trim(); // A oszlop (0. index)
-      const rawDate = calcData[i][2];                          // C oszlop (2. index)
-      const rowProjId = String(calcData[i][3] || "").trim();   // D oszlop (3. index)
-      const rowProjName = String(calcData[i][4] || "").trim(); // E oszlop (4. index)
+      const rowCsoport = String(calcData[i][0] || "").trim();
+      const rawDate = calcData[i][2];
+      const rowProjId = String(calcData[i][3] || "").trim();
+      const rowProjName = String(calcData[i][4] || "").trim();
 
-      // Megváltozott oszlopok felvétele:
-      const netDelta = parseAmount(calcData[i][12]);  // M oszlop (12. index) - Egyenleg változás
-      const cashDelta = parseAmount(calcData[i][13]); // N oszlop (13. index) - Készpénz változás
-      const bankDelta = parseAmount(calcData[i][14]); // O oszlop (14. index) - Számla változás
+      const netDelta = parseAmount(calcData[i][8]);
+      const cashDelta = parseAmount(calcData[i][9]);
+      const bankDelta = parseAmount(calcData[i][10]);
 
       if (rowCsoport.toLowerCase() === activeTarget.toLowerCase()) {
         const matchesProject = (currentProject === "ALL") || 

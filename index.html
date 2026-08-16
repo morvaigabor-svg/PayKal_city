@@ -2,8 +2,8 @@
 <html>
 
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#1976d2">
   <title>ExpenseTracker</title>
 
@@ -154,6 +154,15 @@
     <select id="expenseExtraSetting">
       <option value="" selected>Válassz kategóriát (Opcionális)</option>
     </select>
+
+  
+    <!-- SZÁMLA JELÖLŐNÉGYZET (Van / Nincs) -->
+  <div style="margin-top: 20px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; background: #f8fafc; padding: 14px 18px; border-radius: 12px; border: 1px solid #cbd5e1;">
+    <input type="checkbox" id="hasInvoiceCheckbox" style="width: 28px; height: 28px; accent-color: #2563eb; cursor: pointer;">
+    <label for="hasInvoiceCheckbox" style="margin: 0; font-size: 26px; font-weight: 700; color: #1e293b; cursor: pointer; user-select: none;">
+      Számla kiadás 
+    </label>
+  </div>
 
     <label for="comment">Megjegyzés</label>
     <textarea id="comment" placeholder="Megjegyzés"></textarea>
