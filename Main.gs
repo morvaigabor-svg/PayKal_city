@@ -6,7 +6,7 @@ function doGet() {
     .createTemplateFromFile("index")
     .evaluate()
     .setTitle(APP.NAME)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
 }
 
 function include(filename) {
@@ -136,6 +136,27 @@ function getUserAuth() {
       switchAccountUrl: "https://accounts.google.com/AccountChooser?continue=" + encodeURIComponent(scriptUrl)
     };
   }
+}
+
+/**
+ * 1 db villámgyors összefogó betöltés az indításkor (Batch App State)
+ * Ez azonnal átadja a jogosultságot, beállításokat és az első dashboard nézetet
+ */
+function getInitialAppState() {
+  var auth = getUserAuth();
+  if (!auth.authorized) {
+    return { auth: auth };
+  }
+
+  var targetGroup = auth.csoportId;
+  var settings = getSettingsData();
+  var dashboard = getPayKalDashboardDataImpl("1H", "ALL", targetGroup, "LEADERSHIP_GROUP");
+
+  return {
+    auth: auth,
+    settings: settings,
+    dashboard: dashboard
+  };
 }
 
 /* --- API WRAPPER FÜGGVÉNYEK --- */
