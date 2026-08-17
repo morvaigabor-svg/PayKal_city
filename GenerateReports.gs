@@ -57,63 +57,96 @@ function getReportOptionsData() {
 
 function frissitsBlokkLinkeket() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var forrasLap = ss.getSheetByName('Költségek');
   var celLap = ss.getSheetByName('Számolótábla') || ss.getSheetByName('Számolólap');
+  var forrasLap = ss.getSheetByName('Költségek');
   
-  if (!forrasLap || !celLap) return;
-
-  // 1. Csoportok mappáinak feltérképezése a Drive kereséshez
-  var groupsMap = {};
-  var groupsSheet = ss.getSheetByName('Csoportok');
-  if (groupsSheet && groupsSheet.getLastRow() >= 2) {
-    var gData = groupsSheet.getRange(2, 1, groupsSheet.getLastRow() - 1, 3).getValues();
-    for (var g = 0; g < gData.length; g++) {
-      var gId = String(gData[g][0] || "").trim();
-      var fId = String(gData[g][2] || "").trim();
-      if (gId && fId) groupsMap[gId] = fId;
-    }
+  if (!celLap || !forrasLap) {
+    if (SpreadsheetApp.getUi) SpreadsheetApp.getUi().alert("Hiba: 'Számolótábla' vagy 'Költségek' munkalap nem található!");
+    return;
   }
 
-  // 2. Költségek lap beolvasása (A: Csoport_ID [1], F: Blokk [6], K: Kiadás_ID [11])
+  var celUtolsoSor = celLap.getLastRow();
+  if (celUtolsoSor < 2) return;
+
+  // Beolvassuk a Számolótábla oszlopait:
+  // B oszlop (2): Tranzakció ID | L oszlop (12): Típus | Q oszlop (17): Meglévő blokk érték
+  var celIdek = celLap.getRange(2, 2, celUtolsoSor - 1, 1).getValues();
+  var celTipusok = celLap.getRange(2, 12, celUtolsoSor - 1, 1).getValues();
+  var celMeglevoRichTextek = celLap.getRange(2, 17, celUtolsoSor - 1, 1).getRichTextValues();
+
+  // 1. LÉPÉS: Végigmegyünk a Számolótáblán, és kigyűjtjük a HIÁNYZÓ sorokat
+  var hianyzoSorok = []; // Eltároljuk, melyik sorokhoz kell linket keresni
+  var hianyzoIdek = {};
+
+  for (var i = 0; i < celIdek.length; i++) {
+    var tipus = String(celTipusok[i] ? celTipusok[i][0] : "").trim().toLowerCase();
+    var id = String(celIdek[i] ? celIdek[i][0] : "").trim();
+    var meglevoRt = celMeglevoRichTextek[i] ? celMeglevoRichTextek[i][0] : null;
+    var meglevoSzoveg = meglevoRt ? String(meglevoRt.getText() || "").trim() : "";
+
+    // HA NEM KIADÁS -> Megy tovább!
+    if (tipus !== "kiadás" || !id) {
+      continue;
+    }
+
+    // HA A Q OSZLOPBAN MÁR VAN ÉRTÉK -> Megy tovább!
+    if (meglevoSzoveg !== "") {
+      continue;
+    }
+
+    // HA KIADÁS ÉS A Q OSZLOP ÜRES -> Feljegyezzük, hogy ezt meg kell keresni!
+    hianyzoSorok.push({
+      sorIndex: i,       // 0-alapú index a tömbben
+      sorSzam: i + 2,    // Tényleges sorszám a Sheetben
+      id: id
+    });
+    hianyzoIdek[id] = true;
+  }
+
+  // Ha egyetlen ilyen sor sincs, azonnal készen vagyunk!
+  if (hianyzoSorok.length === 0) {
+    if (SpreadsheetApp.getUi) {
+      try {
+        SpreadsheetApp.getUi().alert("Minden 'Kiadás' típusú sor Q oszlopa már ki van töltve, nincs mit frissíteni!");
+      } catch (e) {}
+    }
+    return;
+  }
+
+  // 2. LÉPÉS: Csak a hiányzó ID-khoz keressük meg a linkeket a 'Költségek' lapról
   var forrasUtolsoSor = forrasLap.getLastRow();
   var szotar = {};
-  var uresRichText = SpreadsheetApp.newRichTextValue().setText("").build();
   
   if (forrasUtolsoSor >= 2) {
-    var forrasCsoportok = forrasLap.getRange(2, 1, forrasUtolsoSor - 1, 1).getValues();
-    var forrasRichTextek = forrasLap.getRange(2, 6, forrasUtolsoSor - 1, 1).getRichTextValues();
+    var forrasCsoportok = forrasLap.getRange(2, 1, forrasUtolsoSor - 1, 1).getValues(); // A: Csoport_ID
+    var forrasRichTextek = forrasLap.getRange(2, 6, forrasUtolsoSor - 1, 1).getRichTextValues(); // F: Blokk link
     var forrasKepletek = forrasLap.getRange(2, 6, forrasUtolsoSor - 1, 1).getFormulas();
     var forrasNyersErtekek = forrasLap.getRange(2, 6, forrasUtolsoSor - 1, 1).getValues();
-    var forrasIdek = forrasLap.getRange(2, 11, forrasUtolsoSor - 1, 1).getValues();
+    var forrasIdek = forrasLap.getRange(2, 11, forrasUtolsoSor - 1, 1).getValues(); // K: Kiadás ID
 
-    for (var i = 0; i < forrasIdek.length; i++) {
-      var id = String(forrasIdek[i][0] || "").trim();
-      if (!id) continue;
+    for (var k = 0; k < forrasIdek.length; k++) {
+      var fId = String(forrasIdek[k][0] || "").trim();
+      
+      // Ha ez az ID nem hiányzik a Számolótáblában, átugorjuk
+      if (!fId || !hianyzoIdek[fId]) continue;
 
-      var csoportId = String(forrasCsoportok[i][0] || "").trim();
-      var rt = forrasRichTextek[i][0];
-      var keplet = String(forrasKepletek[i][0] || "").trim();
-      var nyers = String(forrasNyersErtekek[i][0] || "").trim();
+      var rt = forrasRichTextek[k][0];
+      var keplet = String(forrasKepletek[k][0] || "").trim();
+      var nyers = String(forrasNyersErtekek[k][0] || "").trim();
       var szoveg = (rt && rt.getText()) ? String(rt.getText()).trim() : nyers;
 
-      // --- A) TÖBB-BLOKKOS ESET (pl. "1 | 2" vagy "1 | 2 | 3") ---
-      if (szoveg.indexOf("|") !== -1) {
-        if (rt) {
-          szotar[id] = rt;
-          continue;
-        }
+      // A) Több-blokkos eset ("1 | 2")
+      if (szoveg.indexOf("|") !== -1 && rt) {
+        szotar[fId] = rt;
+        continue;
       }
 
-      // --- B) URL KERESÉSE A CELLÁBÓL ---
+      // B) URL keresése a cellából
       var talaltUrl = null;
-
-      // 1. Képletből
       if (keplet) {
         var m = keplet.match(/https?:\/\/[^\s"',;)]+/i);
         if (m) talaltUrl = m[0];
       }
-
-      // 2. RichText-ből
       if (!talaltUrl && rt) {
         if (rt.getLinkUrl()) {
           talaltUrl = rt.getLinkUrl();
@@ -127,85 +160,78 @@ function frissitsBlokkLinkeket() {
           }
         }
       }
-
-      // 3. Nyers szövegből ha URL
       if (!talaltUrl && nyers.match(/^https?:\/\//i)) {
         talaltUrl = nyers;
       }
 
-      // --- C) DRIVE FALLBACK: Ha még mindig nincs link, megkeressük a Drive mappában! ---
-      if (!talaltUrl && csoportId && groupsMap[csoportId]) {
+      // C) Drive Fallback keresés (ha nincs a cellában link)
+      if (!talaltUrl) {
         try {
-          var folderId = groupsMap[csoportId];
-          var folder = DriveApp.getFolderById(folderId);
-          var files = folder.searchFiles("title contains '" + id + "' and trashed = false");
-          
-          var driveLinks = [];
-          var fileIdx = 1;
-          while (files.hasNext()) {
-            var f = files.next();
-            driveLinks.push({ label: String(fileIdx), url: f.getUrl() });
-            fileIdx++;
+          var csoportId = String(forrasCsoportok[k][0] || "").trim();
+          var groupsSheet = ss.getSheetByName('Csoportok');
+          var folderId = null;
+          if (groupsSheet && groupsSheet.getLastRow() >= 2) {
+            var gData = groupsSheet.getRange(2, 1, groupsSheet.getLastRow() - 1, 3).getValues();
+            for (var g = 0; g < gData.length; g++) {
+              if (String(gData[g][0] || "").trim() === csoportId) {
+                folderId = String(gData[g][2] || "").trim();
+                break;
+              }
+            }
           }
-
-          if (driveLinks.length > 0) {
-            var fullTxt = driveLinks.map(function(d) { return d.label; }).join(" | ");
-            var dBuilder = SpreadsheetApp.newRichTextValue().setText(fullTxt);
-            var offset = 0;
-            driveLinks.forEach(function(d) {
-              dBuilder.setLinkUrl(offset, offset + d.label.length, d.url);
-              offset += d.label.length + 3;
-            });
-            szotar[id] = dBuilder.build();
-            continue;
+          if (folderId) {
+            var folder = DriveApp.getFolderById(folderId);
+            var files = folder.searchFiles("title contains '" + fId + "' and trashed = false");
+            var driveLinks = [];
+            var fIdx = 1;
+            while (files.hasNext()) {
+              driveLinks.push({ label: String(fIdx), url: files.next().getUrl() });
+              fIdx++;
+            }
+            if (driveLinks.length > 0) {
+              var fullTxt = driveLinks.map(function(d) { return d.label; }).join(" | ");
+              var dBuilder = SpreadsheetApp.newRichTextValue().setText(fullTxt);
+              var off = 0;
+              driveLinks.forEach(function(d) {
+                dBuilder.setLinkUrl(off, off + d.label.length, d.url);
+                off += d.label.length + 3;
+              });
+              szotar[fId] = dBuilder.build();
+              continue;
+            }
           }
-        } catch(e) {
-          // Ha nincs Drive jogosultság a mappához, megyünk tovább
-        }
+        } catch (e) {}
       }
 
-      // --- D) VÉGLEGES ÖSSZEÁLLÍTÁS AZ 1 DB BLOKKHOZ ---
+      // D) Összeállítás
       if (talaltUrl) {
         var b = SpreadsheetApp.newRichTextValue().setText(szoveg || "1");
         b.setLinkUrl(0, (szoveg || "1").length, talaltUrl);
-        szotar[id] = b.build();
+        szotar[fId] = b.build();
       } else if (szoveg) {
-        szotar[id] = SpreadsheetApp.newRichTextValue().setText(szoveg).build();
-      } else {
-        szotar[id] = uresRichText;
+        szotar[fId] = SpreadsheetApp.newRichTextValue().setText(szoveg).build();
       }
     }
   }
 
-  // 3. Számolótábla feldolgozása (B: ID, L: Típus)
-  var celUtolsoSor = celLap.getLastRow();
-  if (celUtolsoSor < 2) return;
+  // 3. LÉPÉS: Beírjuk az új linkeket a Számolótáblába
+  var kimenet = celMeglevoRichTextek; // Kiindulunk a meglévő állapotból
+  var frissitettDb = 0;
 
-  var celIdek = celLap.getRange(2, 2, celUtolsoSor - 1, 1).getValues();
-  var celTipusok = celLap.getRange(2, 12, celUtolsoSor - 1, 1).getValues();
-
-  var kimenet = [];
-  var count = 0;
-
-  for (var j = 0; j < celIdek.length; j++) {
-    var tipus = String(celTipusok[j] ? celTipusok[j][0] : "").trim();
-    var celId = String(celIdek[j] ? celIdek[j][0] : "").trim();
-
-    if (tipus.toLowerCase() === "kiadás" && celId && szotar[celId]) {
-      kimenet.push([szotar[celId]]);
-      count++;
-    } else {
-      kimenet.push([uresRichText]);
+  hianyzoSorok.forEach(function(elem) {
+    if (szotar[elem.id]) {
+      kimenet[elem.sorIndex] = [szotar[elem.id]];
+      frissitettDb++;
     }
-  }
+  });
 
-  // 4. Beírás a Q OSZLOPBA (17. oszlop)
+  // Beírás a Q oszlopba (17. oszlop)
   celLap.getRange(2, 17, kimenet.length, 1).setRichTextValues(kimenet);
 
   if (SpreadsheetApp.getUi) {
     try {
-      SpreadsheetApp.getUi().alert("Kész! Összesen " + count + " db sor frissült a Q oszlopban.");
-    } catch(e) {}
+      SpreadsheetApp.getUi().alert("Kész! " + frissitettDb + " db üres sorhoz sikeresen hozzárendeltük a blokk hiperlinket.");
+    } catch (e) {}
   }
 }
 
