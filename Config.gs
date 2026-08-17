@@ -27,6 +27,9 @@ const CONFIG = {
 };
 
 /* Egyetlen központi menü az összes adminisztrációs funkcióhoz*/
+/**
+ * FŐ TÁBLÁZAT (PayKal Admin) - Egyetlen egyeztetett onOpen()
+ */
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('PayKal Admin')
@@ -34,9 +37,10 @@ function onOpen() {
     .addSeparator()
     .addItem('📊 Kimutatások generálása', 'openReportGeneratorDialog')
     .addSeparator()
-    .addItem('Blokkok frissítése', 'frissitsBlokkLinkeket')
+    .addItem('🔄 Blokkok frissítése', 'frissitsBlokkLinkeket')
     .addToUi();
 }
+
 
 function frissitsBlokkLinkeket() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
