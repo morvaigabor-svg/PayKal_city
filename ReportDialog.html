@@ -8,6 +8,10 @@
       .form-group { margin-bottom: 18px; }
       label { font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px; color: #495057; }
       select, input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 5px; font-size: 14px; box-sizing: border-box; }
+      
+      .radio-group { display: flex; gap: 20px; background: #e9ecef; padding: 10px; border-radius: 5px; }
+      .radio-label { font-weight: normal; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; }
+      
       .picker-container { display: flex; gap: 10px; align-items: center; }
       .folder-display { flex-grow: 1; background-color: #e9ecef; cursor: not-allowed; }
       .btn { padding: 10px 16px; border: none; border-radius: 5px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background 0.2s; }
@@ -24,23 +28,36 @@
   <body>
 
     <div class="card">
-      <!-- 1. Csoport választó -->
+      <!-- 1. Kimutatás típusa -->
       <div class="form-group">
-        <label for="groupSelect">1. Válassz Csoportot (Aktív csoportok):</label>
-        <select id="groupSelect">
+        <label>1. Kimutatás Típusa:</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="reportType" value="group" checked onchange="handleTypeChange()"> 👥 Csoport kimutatás
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="reportType" value="city" onchange="handleTypeChange()"> 🏙️ Városi kimutatás
+          </label>
+        </div>
+      </div>
+
+      <!-- 2. Csoport / Város választó -->
+      <div class="form-group">
+        <label id="targetSelectLabel" for="targetSelect">2. Válassz Csoportot (Aktív csoportok):</label>
+        <select id="targetSelect">
           <option value="">-- Adatok betöltése... --</option>
         </select>
       </div>
 
-      <!-- 2. Új táblázat neve -->
+      <!-- 3. Új táblázat neve -->
       <div class="form-group">
-        <label for="fileNameInput">2. Új Google Sheet Neve:</label>
+        <label for="fileNameInput">3. Új Google Sheet Neve:</label>
         <input type="text" id="fileNameInput" placeholder="Pl. Elszámolás - KMCS060">
       </div>
 
-      <!-- 3. Drive Mappa választó -->
+      <!-- 4. Drive Mappa választó -->
       <div class="form-group">
-        <label>3. Célmappa kiválasztása (Google Drive):</label>
+        <label>4. Célmappa kiválasztása (Google Drive):</label>
         <div class="picker-container">
           <input type="text" id="folderNameDisplay" class="folder-display" value="Gyökérmappa (Saját Drive)" readonly>
           <input type="hidden" id="folderIdInput" value="root">
@@ -56,6 +73,7 @@
     <script>
       let pickerApiLoaded = false;
       let oauthToken = "";
+      let globalSelectionData = { groups: [], cities: [], cityToGroups: {} };
 
       // Google Picker API betöltése
       gapi.load('picker', { 
@@ -64,33 +82,65 @@
       });
 
       window.onload = function() {
-        // Aktív csoportok lekérése a szervertől
+        // Adatok lekérése a szervertől (Csoportok és Városok)
         google.script.run
-          .withSuccessHandler(groups => {
-            const select = document.getElementById('groupSelect');
-            select.innerHTML = '';
-            if (!groups || groups.length === 0) {
-              select.innerHTML = '<option value="">Nincs aktív csoport!</option>';
-              return;
-            }
-            select.innerHTML = '<option value="">-- Válassz csoportot --</option>';
-            groups.forEach(g => {
-              const opt = document.createElement('option');
-              opt.value = g;
-              opt.textContent = g;
-              select.appendChild(opt);
-            });
+          .withSuccessHandler(data => {
+            globalSelectionData = data;
+            handleTypeChange();
           })
-          .getActiveGroupIds();
+          .getReportSelectionData();
 
         // Automatikus név-javaslat kitöltése
-        document.getElementById('groupSelect').addEventListener('change', function() {
+        document.getElementById('targetSelect').addEventListener('change', function() {
           const val = this.value;
+          const type = document.querySelector('input[name="reportType"]:checked').value;
           if (val) {
-            document.getElementById('fileNameInput').value = "Kimutatás - " + val;
+            if (type === 'group') {
+              document.getElementById('fileNameInput').value = "Kimutatás - " + val;
+            } else {
+              document.getElementById('fileNameInput').value = "Városi Kimutatás - " + val;
+            }
           }
         });
       };
+
+      function handleTypeChange() {
+        const type = document.querySelector('input[name="reportType"]:checked').value;
+        const select = document.getElementById('targetSelect');
+        const label = document.getElementById('targetSelectLabel');
+
+        select.innerHTML = '';
+
+        if (type === 'group') {
+          label.textContent = '2. Válassz Csoportot (Aktív csoportok):';
+          if (!globalSelectionData.groups || globalSelectionData.groups.length === 0) {
+            select.innerHTML = '<option value="">Nincs aktív csoport!</option>';
+            return;
+          }
+          select.innerHTML = '<option value="">-- Válassz csoportot --</option>';
+          globalSelectionData.groups.forEach(g => {
+            const opt = document.createElement('option');
+            opt.value = g;
+            opt.textContent = g;
+            select.appendChild(opt);
+          });
+        } else {
+          label.textContent = '2. Válassz Várost (Aktív városok):';
+          if (!globalSelectionData.cities || globalSelectionData.cities.length === 0) {
+            select.innerHTML = '<option value="">Nincs elérhető város!</option>';
+            return;
+          }
+          select.innerHTML = '<option value="">-- Válassz várost --</option>';
+          globalSelectionData.cities.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = c;
+            select.appendChild(opt);
+          });
+        }
+
+        document.getElementById('fileNameInput').value = '';
+      }
 
       function openDrivePicker() {
         google.script.run
@@ -151,12 +201,13 @@
       }
 
       function submitCreateReport() {
-        const groupId = document.getElementById('groupSelect').value;
+        const type = document.querySelector('input[name="reportType"]:checked').value;
+        const selectedVal = document.getElementById('targetSelect').value;
         const fileName = document.getElementById('fileNameInput').value.trim();
         const folderId = document.getElementById('folderIdInput').value;
 
-        if (!groupId) {
-          alert("Kérlek válassz egy Csoport ID-t!");
+        if (!selectedVal) {
+          alert(type === 'group' ? "Kérlek válassz egy Csoport ID-t!" : "Kérlek válassz egy Várost!");
           return;
         }
         if (!fileName) {
@@ -177,7 +228,8 @@
             }
           })
           .createGroupReportSheet({
-            groupId: groupId,
+            reportType: type,
+            selectedValue: selectedVal,
             fileName: fileName,
             targetFolderId: folderId
           });

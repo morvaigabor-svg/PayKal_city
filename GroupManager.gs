@@ -62,14 +62,15 @@ function createGroupAndFolder(data) {
     
     if (!sheet) {
       sheet = ss.insertSheet("Csoportok");
-      sheet.appendRow(["Csoport_ID", "Város", "Mappa_ID", "Létrehozva"]);
+      sheet.appendRow(["Csoport_ID", "Város", "Mappa_ID", "Létrehozva","Aktív"]);
     }
 
     sheet.appendRow([
       data.csoportId,
       data.varos,
       newFolderId,
-      new Date()
+      new Date(),
+      "Aktív"
     ]);
 
     return { success: true, folderUrl: newFolder.getUrl() };
